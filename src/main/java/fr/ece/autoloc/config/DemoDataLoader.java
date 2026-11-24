@@ -1,8 +1,12 @@
 package fr.ece.autoloc.config;
 
 import fr.ece.autoloc.domain.CategorieVehicule;
+import fr.ece.autoloc.domain.Contrat;
+import fr.ece.autoloc.domain.ModePaiement;
+import fr.ece.autoloc.domain.Paiement;
 import fr.ece.autoloc.domain.StatutVehicule;
 import fr.ece.autoloc.domain.Vehicule;
+import fr.ece.autoloc.repository.ContratRepository;
 import fr.ece.autoloc.repository.VehiculeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +14,9 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 @Slf4j
@@ -18,9 +25,15 @@ import java.util.List;
 public class DemoDataLoader implements CommandLineRunner {
 
     private final VehiculeRepository vehiculeRepository;
+    private final ContratRepository contratRepository;
 
     @Override
     public void run(String... args) {
+        loadVehicules();
+        loadContrats();
+    }
+
+    private void loadVehicules() {
         if (vehiculeRepository.count() > 0) {
             log.info("Demo data already present, nothing inserted");
             return;
@@ -28,13 +41,33 @@ public class DemoDataLoader implements CommandLineRunner {
 
         vehiculeRepository.saveAll(List.of(
                 new Vehicule(null, "AB-123-CD", "Renault", "Clio",
-                        CategorieVehicule.CITADINE, new BigDecimal("35.00"), StatutVehicule.DISPONIBLE),
+                        CategorieVehicule.CITADINE, new BigDecimal("35.00"), StatutVehicule.DISPONIBLE, null, new HashSet<>(),  new ArrayList<>()),
                 new Vehicule(null, "EF-456-GH", "Peugeot", "508",
-                        CategorieVehicule.BERLINE, new BigDecimal("60.00"), StatutVehicule.DISPONIBLE),
+                        CategorieVehicule.BERLINE, new BigDecimal("60.00"), StatutVehicule.DISPONIBLE, null, new HashSet<>(),  new ArrayList<>()),
                 new Vehicule(null, "IJ-789-KL", "Dacia", "Duster",
-                        CategorieVehicule.SUV, new BigDecimal("50.00"), StatutVehicule.MAINTENANCE)
+                        CategorieVehicule.SUV, new BigDecimal("50.00"), StatutVehicule.MAINTENANCE, null, new HashSet<>(), new ArrayList<>())
         ));
 
         log.info("{} demo vehicles inserted", vehiculeRepository.count());
     }
+
+    private void loadContrats() {
+        if (contratRepository.count() > 0) {
+            log.info("Demo contracts already present, nothing inserted");
+            return;
+        }
+
+        Contrat contrat = new Contrat();
+        contrat.setDateSignature(LocalDate.now());
+        contrat.setMontantTotal(new BigDecimal("210.00"));
+        contrat.setValide(true);
+
+        contrat.addPaiement(new Paiement(null, new BigDecimal("105.00"), LocalDate.now(), ModePaiement.CARTE, null));
+        contrat.addPaiement(new Paiement(null, new BigDecimal("105.00"), LocalDate.now(), ModePaiement.VIREMENT, null));
+
+        contratRepository.save(contrat);
+
+        log.info("Demo contract inserted with {} payments", contrat.getPaiements().size());
+    }
+
 }
