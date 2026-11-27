@@ -27,31 +27,83 @@
     </div>
 
     <div class="login-side">
-        <form id="login-form" class="login-card" autocomplete="on">
-            <h2>Connexion</h2>
-            <label class="field">
-                <span>Identifiant</span>
-                <input name="username" autocomplete="username" required>
-            </label>
-            <label class="field">
-                <span>Mot de passe</span>
-                <input name="password" type="password" autocomplete="current-password" required>
-            </label>
-            <p id="login-error" class="form-error" hidden></p>
-            <button class="btn btn-primary btn-block" type="submit">Se connecter</button>
-
-            <div class="login-demo">
-                <span>Comptes de démonstration</span>
-                <div class="login-demo-buttons">
-                    <button class="demo-btn" type="button" data-demo="student">
-                        <strong>Essayer en client</strong><small>student / student123</small>
-                    </button>
-                    <button class="demo-btn" type="button" data-demo="admin">
-                        <strong>Essayer en agence</strong><small>admin / admin123</small>
-                    </button>
-                </div>
+        <div class="login-card">
+            <div class="login-tabs" role="tablist">
+                <button class="login-tab on" type="button" role="tab" data-tab="login" aria-selected="true">Connexion</button>
+                <button class="login-tab" type="button" role="tab" data-tab="register" aria-selected="false">Créer un compte</button>
             </div>
-        </form>
+
+            <form id="login-form" class="login-form" autocomplete="on">
+                <label class="field">
+                    <span>Email ou identifiant</span>
+                    <input name="username" autocomplete="username" required>
+                </label>
+                <label class="field">
+                    <span>Mot de passe</span>
+                    <input name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <p id="login-error" class="form-error" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit">Se connecter</button>
+
+                <div class="login-demo">
+                    <span>Comptes de démonstration</span>
+                    <div class="login-demo-buttons">
+                        <button class="demo-btn" type="button" data-demo="student">
+                            <strong>Essayer en client</strong><small>student / student123</small>
+                        </button>
+                        <button class="demo-btn" type="button" data-demo="admin">
+                            <strong>Essayer en agence</strong><small>admin / admin123</small>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <form id="register-form" class="login-form" novalidate hidden>
+                <p class="login-intro">Ces informations servent pour vos locations. Vous pourrez ajouter d'autres conducteurs plus tard.</p>
+                <div class="register-grid">
+                <label class="field" data-field="prenom">
+                    <span>Prénom</span>
+                    <input name="prenom" type="text" autocomplete="given-name" maxlength="50">
+                    <small class="field-error" data-error-for="prenom" hidden></small>
+                </label>
+                <label class="field" data-field="nom">
+                    <span>Nom</span>
+                    <input name="nom" type="text" autocomplete="family-name" maxlength="50">
+                    <small class="field-error" data-error-for="nom" hidden></small>
+                </label>
+                </div>
+                <label class="field" data-field="email">
+                    <span>Email</span>
+                    <input name="email" type="email" autocomplete="email" maxlength="50" placeholder="nom@domaine.fr">
+                    <small class="field-error" data-error-for="email" hidden></small>
+                </label>
+                <div class="register-grid">
+                <label class="field" data-field="telephone">
+                    <span>Téléphone (facultatif)</span>
+                    <input name="telephone" type="tel" autocomplete="tel" maxlength="20">
+                    <small class="field-error" data-error-for="telephone" hidden></small>
+                </label>
+                <label class="field" data-field="numPermis">
+                    <span>N° de permis</span>
+                    <input name="numPermis" type="text" maxlength="15" placeholder="8 à 15 caractères">
+                    <small class="field-error" data-error-for="numPermis" hidden></small>
+                </label>
+                </div>
+                <label class="field" data-field="motDePasse">
+                    <span>Mot de passe</span>
+                    <input name="motDePasse" type="password" autocomplete="new-password" maxlength="72">
+                    <small class="field-hint">8 caractères minimum, avec au moins une lettre et un chiffre.</small>
+                    <small class="field-error" data-error-for="motDePasse" hidden></small>
+                </label>
+                <label class="field" data-field="confirmation">
+                    <span>Confirmer le mot de passe</span>
+                    <input name="confirmation" type="password" autocomplete="new-password" maxlength="72">
+                    <small class="field-error" data-error-for="confirmation" hidden></small>
+                </label>
+                <p id="register-error" class="form-error" hidden></p>
+                <button class="btn btn-primary btn-block" type="submit">Créer mon compte</button>
+            </form>
+        </div>
     </div>
 </section>
 

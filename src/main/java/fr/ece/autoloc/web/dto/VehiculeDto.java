@@ -35,9 +35,11 @@ public final class VehiculeDto {
             BigDecimal tarifJournalier,
             StatutVehicule statut,
             Long agenceId,
-            String agenceNom) {
+            String agenceNom,
+            String photoUrl) {
 
-        public static Response from(Vehicule v) {
+        /** photoUrl is null when the vehicle has no photo. */
+        public static Response from(Vehicule v, String photoUrl) {
             Agence agence = v.getAgence();
             return new Response(
                     v.getIdVehicule(),
@@ -48,7 +50,8 @@ public final class VehiculeDto {
                     v.getTarifJournalier(),
                     v.getStatut(),
                     agence == null ? null : agence.getIdAgence(),
-                    agence == null ? null : agence.getNom());
+                    agence == null ? null : agence.getNom(),
+                    photoUrl);
         }
     }
 }

@@ -1,6 +1,7 @@
 package fr.ece.autoloc.web.controller;
 
 import fr.ece.autoloc.service.BusinessRuleException;
+import fr.ece.autoloc.service.FichierInvalideException;
 import fr.ece.autoloc.service.ResourceNotFoundException;
 import fr.ece.autoloc.web.dto.ApiError;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -10,6 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.List;
 
@@ -24,6 +26,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ApiError> businessRule(BusinessRuleException ex) {
         return error(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(FichierInvalideException.class)
+    public ResponseEntity<ApiError> fichierInvalide(FichierInvalideException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiError> tropGros(MaxUploadSizeExceededException ex) {
+        return error(HttpStatus.PAYLOAD_TOO_LARGE, "La photo dépasse 5 Mo.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

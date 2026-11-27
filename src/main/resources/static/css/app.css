@@ -74,7 +74,7 @@ code { background: var(--grey-soft); padding: 1px 5px; border-radius: 4px; font-
 
 .login-side { display: grid; place-items: center; padding: 32px; border-left: 1px solid var(--line);
     background: rgba(8, 12, 19, .55); backdrop-filter: blur(6px); }
-.login-card { position: relative; width: 100%; max-width: 380px; display: grid; gap: 16px; padding: 30px;
+.login-card { position: relative; width: 100%; max-width: 380px; display: grid; gap: 20px; padding: 26px 30px 30px;
     background: var(--graphite); border: 1px solid var(--line); border-radius: 18px; }
 .login-card::before { /* LED strip on top of the card */
     content: ""; position: absolute; left: 24px; right: 24px; top: -1px; height: 2px; border-radius: 2px;
@@ -82,7 +82,21 @@ code { background: var(--grey-soft); padding: 1px 5px; border-radius: 4px; font-
     animation: led-sweep 3.2s ease-in-out infinite;
 }
 @keyframes led-sweep { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-.login-card h2 { font-family: "Chakra Petch", sans-serif; font-size: 24px; }
+.login-form { display: grid; gap: 16px; }
+.login-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px;
+    background: #0f1520; border: 1px solid var(--line); }
+.login-tab { border: 0; border-radius: 999px; padding: 9px 10px; background: transparent; color: var(--steel);
+    font: inherit; font-weight: 600; cursor: pointer; transition: background .2s, color .2s; }
+.login-tab:hover { color: var(--light); }
+.login-tab.on { background: var(--graphite-2, #1c2533); color: var(--light); box-shadow: inset 0 -2px 0 var(--xenon); }
+.login-tab:focus-visible { outline: 2px solid var(--xenon); outline-offset: 2px; }
+.register-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.login-side:has(#register-form:not([hidden])) .login-card { max-width: 440px; }
+#register-form { gap: 14px; }
+.login-intro { margin: 0; color: var(--steel); font-size: 13.5px; line-height: 1.5; }
+.field-hint { color: var(--steel); font-size: 12px; }
+.login .field-error { color: #ff8da0; font-size: 12.5px; }
+.login .field.invalid input { border-color: var(--brake); box-shadow: 0 0 0 3px rgba(255, 64, 96, .12); }
 .login .field > span { color: var(--steel); }
 .login .field input { background: #0f1520; color: var(--light); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
 .login .field input:focus { outline: none; border-color: var(--xenon); box-shadow: 0 0 0 3px rgba(63, 212, 255, .15); }
@@ -109,6 +123,7 @@ code { background: var(--grey-soft); padding: 1px 5px; border-radius: 4px; font-
     .login-tagline { margin-top: 28px; }
     .login-road { height: 170px; margin-left: -22px; margin-right: -22px; }
     .login-side { border-left: 0; border-top: 1px solid var(--line); padding: 24px 16px 40px; }
+    .register-grid { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .login-card::before { animation: none; } }
 
@@ -242,6 +257,15 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .toast.error { background: var(--red); }
 .toast.success { background: var(--green); }
 @keyframes slide { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---------- Vehicle photos ---------- */
+.thumb { display: block; width: 64px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--grey-soft); }
+.thumb-empty { border: 1px dashed var(--border); }
+.photo-box { display: grid; gap: 14px; }
+.photo-preview { height: 220px; border-radius: 10px; border: 1px dashed var(--border); background: var(--surface-2);
+    display: grid; place-items: center; overflow: hidden; }
+.photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.photo-box .form-actions { align-items: center; margin-top: 4px; }
 
 /* ---------- Customer space ---------- */
 .banner-info { background: var(--primary-soft); color: var(--primary-dark); border-color: #cfdbfd; }
@@ -429,6 +453,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     background: radial-gradient(ellipse 70% 40% at 50% 100%, rgba(63, 212, 255, .10), transparent 70%), #10161f;
     border-bottom: 1px solid var(--line);
 }
+.car-stage.has-photo { display: block; padding: 0; height: 170px; overflow: hidden; }
+.car-photo { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .4s ease, filter .4s ease;
+    filter: saturate(.9) brightness(.92); }
+.car:hover .car-photo, .car:focus-within .car-photo { transform: scale(1.04); filter: saturate(1.05) brightness(1); }
 .car-stage svg { width: 100%; max-width: 250px; height: auto; overflow: visible; }
 .car-stage .headlight { fill: #3a4657; transition: fill .2s; }
 .car-stage .beam { opacity: 0; transition: opacity .3s; }

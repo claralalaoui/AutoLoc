@@ -16,9 +16,9 @@ The interface is made of three static files served by Spring Boot (`src/main/res
 
 | Page | Content |
 |---|---|
-| Louer une voiture | Catalogue of vehicles that are not in maintenance, with search and category filter. "Louer ce véhicule" asks for the dates and shows the price. |
-| Mes réservations | The customer's own reservations and their status. A pending request can be cancelled. |
-| Mon profil | Name, email, phone, licence number. Filled in once, before the first rental. |
+| Louer une voiture | Catalogue of vehicles that are not in maintenance, with search and category filter. "Louer ce véhicule" asks who drives (one of the account's profiles, or a new profile typed in the same window) and the dates, and shows the price. |
+| Mes réservations | The account's reservations, the driver's name and the status. A pending request can be cancelled. |
+| Mes profils | One profile per driver (name, email, phone, licence number). An account can hold several profiles; they can be added, edited, and deleted when they have no reservation. |
 
 Typical flow: the customer sends a request (status EN_ATTENTE), the agency confirms it (the vehicle becomes LOUE), creates the contract and records the payments.
 
@@ -52,12 +52,16 @@ web.controller  ->  service  ->  repository  ->  domain (JPA entities)
 
 | Method | URL | Role | Description |
 |---|---|---|---|
+| POST | `/api/public/inscription` | public | Create a customer account |
 | GET | `/api/me` | USER, ADMIN | Current user and roles (used by the login screen) |
-| GET, PUT | `/api/me/profil` | USER, ADMIN | Own customer profile (404 until it is filled) |
-| GET, POST | `/api/me/reservations` | USER, ADMIN | Own reservations / new request `{"vehiculeId": 2, "dateDebut": "2026-12-20", "dateFin": "2026-12-23"}` |
+| GET, POST | `/api/me/profils` | USER, ADMIN | The account's profiles / add a profile |
+| PUT, DELETE | `/api/me/profils/{id}` | USER, ADMIN | Edit / delete one of the account's profiles |
+| GET, POST | `/api/me/reservations` | USER, ADMIN | The account's reservations / new request, for an existing profile `{"clientId": 4, "vehiculeId": 2, "dateDebut": "2026-12-20", "dateFin": "2026-12-23"}` or with a new profile `{"nouveauClient": {...}, "vehiculeId": 2, ...}` |
 | POST | `/api/me/reservations/{id}/annulation` | USER, ADMIN | Cancel one's own pending request |
 | GET | `/api/vehicules`, `/api/vehicules/{id}` | USER, ADMIN | Catalogue / detail |
 | POST, PUT, DELETE | `/api/vehicules`, `/api/vehicules/{id}` | ADMIN | Create / update / delete |
+| GET | `/api/vehicules/{id}/photo` | public | Vehicle photo (404 if none) |
+| POST, DELETE | `/api/vehicules/{id}/photo` | ADMIN | Upload (multipart field `photo`) / remove the photo |
 | GET | `/api/agences`, `/api/agences/{id}` | USER, ADMIN | List / detail |
 | POST, PUT, DELETE | `/api/agences`, `/api/agences/{id}` | ADMIN | Create / update / delete |
 | GET | `/api/dashboard` | ADMIN | Key figures |
@@ -83,8 +87,11 @@ Errors are returned as JSON: `{"status": 409, "message": "...", "details": [...]
 
 ## Business rules
 
-- A customer account is linked to one `Client` row through the new column `client.username`. The username always comes from the authentication (`Authentication.getName()`), never from the request body, so a customer can only read or change his own profile and reservations. Asking to cancel someone else's reservation answers 404, as if it did not exist.
-- A customer cannot book before filling his profile, nor book a start date in the past.
+- A customer account owns one or several `Client` rows (profiles) through the new column `client.username`. The username always comes from the authentication (`Authentication.getName()`), never from the request body, so a customer can only read or change his own profile and reservations. Asking to cancel someone else's reservation answers 404, as if it did not exist.
+- A request names exactly one driver: an existing profile of the account (`clientId`) or a new one (`nouveauClient`). A new profile and its reservation are saved in the same transaction, so a refused reservation does not leave a half-created profile. A customer cannot book a start date in the past.
+- Input formats, checked by Bean Validation on the server (`ClientDto`) and repeated in the browser only to show the message under the field:
+  - email: `^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$` ("Format d'email invalide."). `@Email` alone was not used because it accepts addresses such as `name@domain` without an extension;
+  - licence number: `^[A-Za-z0-9]{8,15}$`, 8 to 15 letters or digits, no space or special character. It is stored in upper case.
 
 - Registration numbers, customer emails and licence numbers are unique (checked before saving, the database constraint stays as a safety net).
 - A reservation needs an end date on or after the start date, a vehicle that is not in maintenance, and no other active reservation (EN_ATTENTE or CONFIRMEE) on the same vehicle for an overlapping period.
@@ -95,6 +102,22 @@ Errors are returned as JSON: `{"status": 409, "message": "...", "details": [...]
 - Deletions follow the cascade choices of `fetch-strategy.md`: an agency with vehicles or employees, a customer with reservations, a vehicle with reservations or maintenance records, or a reservation with a contract cannot be deleted. The API answers 409 with an explanation instead of deleting related data.
 
 Simplification: the vehicle status is a single value. If a vehicle has several confirmed reservations on different periods, finishing one of them sets it back to DISPONIBLE.
+
+## Vehicle photos
+
+- The agency adds a photo from the Véhicules page ("Photo" button). The customer catalogue shows it instead of the drawing.
+- Photos are stored in MySQL, in their own table `vehicule_photo` (entity `VehiculePhoto`, primary key = vehicle id with `@MapsId`, so one photo per vehicle). The vehicle list never loads the image bytes: a projection query only reads which vehicles have a photo.
+- Upload checks, on the server: 5 MB maximum (`spring.servlet.multipart.max-file-size`, plus a check in the service), and the format is detected from the first bytes of the file (JPEG, PNG or WebP). The file name and the Content-Type sent by the browser are not trusted, and SVG is refused because it can contain scripts. The browser repeats the size and type checks only to answer faster.
+- `GET /api/vehicules/{id}/photo` is public: an `<img>` tag cannot send the Authorization header, and a car photo is not personal data. Responses are cached by the browser; the URL contains a version (`?v=...`) that changes with each new photo.
+
+## Accounts in MySQL and sign-up
+
+- The in-memory users of the security exercise (`InMemoryUserDetailsManager`) were replaced by accounts stored in MySQL: entity `Utilisateur` (table `utilisateur`: login, BCrypt hash, role USER or ADMIN). `CompteService` implements `UserDetailsService`, so Spring Security loads the account and its role from the database at each request. This answers the exercise question "What would be needed to load users and roles from MySQL?".
+- The classroom accounts `student` / `student123` (USER) and `admin` / `admin123` (ADMIN) are created at startup by `ComptesDemoLoader` if they are missing, so the Postman tests (200, 401, 403) give the same results.
+- `POST /api/public/inscription` `{"email": "...", "motDePasse": "..."}` creates a **customer** account. The role is never read from the request: nobody can sign up as ADMIN. Rules checked on the server: email format, 50 characters maximum, password of 8 to 72 characters with at least one letter and one digit (72 is the BCrypt limit). An email already used answers 409.
+- The login page has a "Créer un compte" tab. After sign-up the customer is logged in directly, and the email of his account is pre-filled when he creates his first driver profile.
+
+Limit: answering 409 for an existing email tells that this email has an account. A production site would send a confirmation email instead, and would also limit the number of attempts.
 
 ## Changes to the security configuration
 

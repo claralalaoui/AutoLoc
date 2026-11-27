@@ -128,12 +128,13 @@ async function api(method, path, body) {
         'X-Requested-With': 'XMLHttpRequest',
         Accept: 'application/json',
     };
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const isFile = body instanceof FormData;   // the browser sets the multipart boundary itself
+    if (body !== undefined && !isFile) headers['Content-Type'] = 'application/json';
 
     const response = await fetch('/api' + path, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? undefined : (isFile ? body : JSON.stringify(body)),
     });
 
     if (response.status === 401) {
@@ -197,6 +198,7 @@ function logout(message) {
     closeModal();
     $('#app-view').hidden = true;
     $('#login-view').hidden = false;
+    showLoginTab('login');
     const form = $('#login-form');
     form.password.value = '';
     if (!message) form.username.value = '';
@@ -222,6 +224,102 @@ $('#login-form').addEventListener('submit', async (event) => {
 $('#logout').addEventListener('click', () => logout());
 
 const DEMO_ACCOUNTS = { student: 'student123', admin: 'admin123' };
+
+/* ---------- Sign-up ---------- */
+
+const PASSWORD_RE = /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/;
+
+function showLoginTab(tab) {
+    document.querySelectorAll('.login-tab').forEach((button) => {
+        const on = button.dataset.tab === tab;
+        button.classList.toggle('on', on);
+        button.setAttribute('aria-selected', String(on));
+    });
+    $('#login-form').hidden = tab !== 'login';
+    $('#register-form').hidden = tab !== 'register';
+    const first = (tab === 'login' ? $('#login-form') : $('#register-form')).querySelector('input');
+    if (first) first.focus();
+}
+
+document.querySelectorAll('.login-tab').forEach((button) =>
+    button.addEventListener('click', () => showLoginTab(button.dataset.tab)));
+
+function setRegisterError(name, message) {
+    const form = $('#register-form');
+    const slot = form.querySelector(`[data-error-for="${name}"]`);
+    if (!slot) return false;
+    slot.hidden = !message;
+    slot.textContent = message || '';
+    form.querySelector(`[data-field="${name}"]`).classList.toggle('invalid', Boolean(message));
+    return true;
+}
+
+$('#register-form').addEventListener('input', (event) => setRegisterError(event.target.name, ''));
+
+$('#register-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const value = (name) => form.elements[name].value.trim();
+    const email = value('email');
+    const motDePasse = form.motDePasse.value;
+    const errorBox = $('#register-error');
+    errorBox.hidden = true;
+
+    const errors = {
+        prenom: value('prenom') ? '' : 'Le prénom est obligatoire.',
+        nom: value('nom') ? '' : 'Le nom est obligatoire.',
+        email: !email ? "L'email est obligatoire." : (EMAIL_RE.test(email) ? '' : "Format d'email invalide."),
+        telephone: !value('telephone') || TELEPHONE_RE.test(value('telephone')) ? '' : 'Numéro de téléphone invalide.',
+        numPermis: !value('numPermis') ? 'Le numéro de permis est obligatoire.'
+            : (PERMIS_RE.test(value('numPermis')) ? '' : 'Le numéro de permis doit contenir 8 à 15 lettres ou chiffres, sans caractère spécial.'),
+        motDePasse: PASSWORD_RE.test(motDePasse) ? '' : 'Le mot de passe doit contenir au moins 8 caractères, dont une lettre et un chiffre.',
+        confirmation: form.confirmation.value === motDePasse ? '' : 'Les deux mots de passe ne sont pas identiques.',
+    };
+    Object.entries(errors).forEach(([name, message]) => setRegisterError(name, message));
+    const firstError = Object.keys(errors).find((name) => errors[name]);
+    if (firstError) {
+        form.elements[firstError].focus();
+        return;
+    }
+
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+        // Public call: no Authorization header (an empty one would be rejected by Spring Security).
+        const response = await fetch('/api/public/inscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
+            body: JSON.stringify({
+                email,
+                motDePasse,
+                prenom: value('prenom'),
+                nom: value('nom'),
+                telephone: value('telephone') || null,
+                numPermis: value('numPermis'),
+            }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+            const others = (data?.details || []).filter((detail) => {
+                const [field, ...rest] = detail.split(' : ');
+                return !setRegisterError(field, rest.join(' : '));
+            });
+            const message = [data?.details?.length && !others.length ? '' : (data?.message || `Erreur ${response.status}`), ...others]
+                .filter(Boolean).join(' ');
+            errorBox.hidden = !message;
+            errorBox.textContent = message;
+            return;
+        }
+        form.reset();
+        await startSession(encodeCredentials(data.identifiant, motDePasse));
+        toast('Compte créé. Bienvenue !', 'success');
+    } catch {
+        errorBox.hidden = false;
+        errorBox.textContent = "Serveur injoignable. L'application est-elle lancée ?";
+    } finally {
+        button.disabled = false;
+    }
+});
 document.querySelectorAll('[data-demo]').forEach((button) => button.addEventListener('click', () => {
     const form = $('#login-form');
     form.username.value = button.dataset.demo;
@@ -603,6 +701,9 @@ VIEWS.vehicules = async () => {
             .filter((v) => matches(v, f.q, ['immatriculation', 'marque', 'modele', 'agenceNom']))
             .map((v) => `
                 <tr>
+                    <td>${v.photoUrl
+                        ? `<img class="thumb" src="${esc(v.photoUrl)}" alt="" loading="lazy">`
+                        : '<span class="thumb thumb-empty" title="Pas de photo"></span>'}</td>
                     <td class="strong">${esc(v.immatriculation)}</td>
                     <td>${esc(v.marque)} ${esc(v.modele)}</td>
                     <td>${esc(LABELS.categorie[v.categorie] || v.categorie)}</td>
@@ -610,11 +711,12 @@ VIEWS.vehicules = async () => {
                     <td>${badge(LABELS.statutVehicule, v.statut)}</td>
                     <td>${v.agenceNom ? esc(v.agenceNom) : '<span class="muted">Non affecté</span>'}</td>
                     <td>${state.isAdmin ? `<div class="actions">
+                        ${actionButton('vehicule-photo', v.id, 'Photo')}
                         ${actionButton('vehicule-edit', v.id, 'Modifier')}
                         ${actionButton('vehicule-delete', v.id, 'Supprimer', 'btn-danger')}</div>` : ''}</td>
                 </tr>`);
         return table([
-            { label: 'Immatriculation' }, { label: 'Modèle' }, { label: 'Catégorie' },
+            { label: 'Photo' }, { label: 'Immatriculation' }, { label: 'Modèle' }, { label: 'Catégorie' },
             { label: 'Tarif / jour', num: true }, { label: 'Statut' }, { label: 'Agence' }, { label: '' },
         ], rows, 'Aucun véhicule ne correspond.');
     });
@@ -633,6 +735,77 @@ function vehiculeFields() {
             options: (state.data.agences || []).map((a) => ({ value: a.id, label: `${a.nom} (${a.ville})` })),
         },
     ];
+}
+
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const PHOTO_MAX = 5 * 1024 * 1024;
+
+function openPhotoForm(v) {
+    openModal(`Photo de ${v.marque} ${v.modele}`, `
+        <div class="photo-box">
+            <div class="photo-preview" id="photo-preview">
+                ${v.photoUrl ? `<img src="${esc(v.photoUrl)}" alt="Photo actuelle">` : '<span class="muted">Pas encore de photo</span>'}
+            </div>
+            <label class="field">
+                <span>Choisir une image : JPEG, PNG ou WebP, 5 Mo maximum. Format paysage conseillé.</span>
+                <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp">
+            </label>
+            <p id="form-error" class="form-error" hidden></p>
+            <div class="form-actions">
+                ${v.photoUrl ? '<button class="btn btn-danger" type="button" id="photo-delete">Supprimer la photo</button><span style="flex:1"></span>' : ''}
+                <button class="btn btn-ghost" type="button" data-close>Annuler</button>
+                <button class="btn btn-primary" type="button" id="photo-send" disabled>Enregistrer la photo</button>
+            </div>
+        </div>`);
+
+    const input = $('#photo-input');
+    const send = $('#photo-send');
+    const errorBox = $('#form-error');
+    const showError = (message) => { errorBox.hidden = !message; errorBox.textContent = message || ''; };
+    let file = null;
+
+    input.addEventListener('change', () => {
+        file = input.files[0] || null;
+        send.disabled = true;
+        showError('');
+        if (!file) return;
+        if (!PHOTO_TYPES.includes(file.type)) { showError('Format non accepté : choisissez une image JPEG, PNG ou WebP.'); file = null; return; }
+        if (file.size > PHOTO_MAX) { showError('La photo dépasse 5 Mo.'); file = null; return; }
+        $('#photo-preview').innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Aperçu">`;
+        send.disabled = false;
+    });
+
+    send.addEventListener('click', async () => {
+        if (!file) return;
+        send.disabled = true;
+        try {
+            const data = new FormData();
+            data.append('photo', file);
+            await api('POST', `/vehicules/${v.id}/photo`, data);
+            closeModal();
+            toast('Photo enregistrée.', 'success');
+            await refresh();
+        } catch (error) {
+            showError(error.message);
+            send.disabled = false;
+        }
+    });
+
+    const remove = $('#photo-delete');
+    if (remove) {
+        remove.addEventListener('click', async () => {
+            remove.disabled = true;
+            try {
+                await api('DELETE', `/vehicules/${v.id}/photo`);
+                closeModal();
+                toast('Photo supprimée.', 'success');
+                await refresh();
+            } catch (error) {
+                showError(error.message);
+                remove.disabled = false;
+            }
+        });
+    }
 }
 
 /* ---------- Agences ---------- */
@@ -705,6 +878,7 @@ VIEWS.clients = async () => {
 /* Same rules as the server (ClientDto): the server checks again, the browser only gives faster feedback. */
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const PERMIS_RE = /^[A-Za-z0-9]{8,15}$/;
+const TELEPHONE_RE = /^\+?[0-9 .()-]{6,20}$/;
 
 const CLIENT_FIELDS = [
     { name: 'prenom', label: 'Prénom', required: true, maxlength: 50, autocomplete: 'given-name' },
@@ -714,7 +888,10 @@ const CLIENT_FIELDS = [
         placeholder: 'nom@domaine.fr', autocomplete: 'email',
         validate: (v) => (EMAIL_RE.test(v) ? '' : "Format d'email invalide."),
     },
-    { name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20, autocomplete: 'tel' },
+    {
+        name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20, autocomplete: 'tel',
+        validate: (v) => (TELEPHONE_RE.test(v) ? '' : 'Numéro de téléphone invalide.'),
+    },
     {
         name: 'numPermis', label: 'N° de permis', required: true, maxlength: 15, placeholder: '8 à 15 lettres ou chiffres',
         validate: (v) => (PERMIS_RE.test(v) ? '' : 'Le numéro de permis doit contenir 8 à 15 lettres ou chiffres, sans caractère spécial.'),
@@ -962,7 +1139,9 @@ VIEWS.louer = async () => {
             .filter((v) => matches(v, f.q, ['marque', 'modele', 'agenceNom']));
         $('#table-zone').innerHTML = cars.length ? `<div class="catalogue">${cars.map((v) => `
             <article class="card car">
-                <div class="car-stage">${carSvg(v.categorie, { label: `${v.marque} ${v.modele}` })}</div>
+                ${v.photoUrl
+                    ? `<div class="car-stage has-photo"><img class="car-photo" src="${esc(v.photoUrl)}" alt="${esc(v.marque)} ${esc(v.modele)}" loading="lazy"></div>`
+                    : `<div class="car-stage">${carSvg(v.categorie, { label: `${v.marque} ${v.modele}` })}</div>`}
                 <div class="card-body">
                     <div class="car-title">${esc(v.marque)} ${esc(v.modele)}</div>
                     <div class="car-meta">
@@ -1066,7 +1245,12 @@ function openLocationForm(v, profils) {
     openForm({
         title: `Louer ${v.marque} ${v.modele}`,
         submitLabel: 'Envoyer ma demande',
-        values: { dateDebut: today, dateFin: today, clientId: profils.length ? profils[0].id : NEW_PROFILE },
+        values: {
+            dateDebut: today,
+            dateFin: today,
+            clientId: profils.length ? profils[0].id : NEW_PROFILE,
+            email: state.user.username.includes('@') ? state.user.username : '',
+        },
         fields: [
             {
                 name: 'clientId', label: 'Conducteur', type: 'select', required: true, full: true,
@@ -1150,6 +1334,7 @@ const ACTIONS = {
         values: { statut: 'DISPONIBLE', categorie: 'CITADINE' },
         onSubmit: async (data) => { await api('POST', '/vehicules', data); toast('Véhicule ajouté.', 'success'); },
     }),
+    'vehicule-photo': (id) => openPhotoForm(findIn('vehicules', id)),
     'vehicule-edit': (id) => {
         const v = findIn('vehicules', id);
         openForm({
