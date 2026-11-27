@@ -54,7 +54,7 @@ Configuration added to the application:
 
 **Fix.** The two monitoring endpoints were explicitly allowed, **before** the broader rules, because Spring Security applies the first matching rule:
 
-```java
+```
 http.authorizeHttpRequests(auth -> auth
     .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
     .requestMatchers("/api/public/**").permitAll()
