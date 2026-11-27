@@ -207,3 +207,203 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     .form-grid { grid-template-columns: 1fr; }
     .search { width: 100%; }
 }
+
+/* =========================================================================
+ * Customer space: night drive theme (body.theme-client)
+ * ========================================================================= */
+.theme-client {
+    --night: #0c1119;
+    --graphite: #151c28;
+    --graphite-2: #1c2533;
+    --line: #263142;
+    --light: #e7ecf4;
+    --steel: #8a97ad;
+    --xenon: #3fd4ff;
+    --xenon-deep: #0ea5d9;
+    --brake: #ff4060;
+    --amber-led: #ffb547;
+    --green-led: #3ee59a;
+    --glow: 0 0 6px rgba(63, 212, 255, .9), 0 0 18px rgba(63, 212, 255, .45);
+    color-scheme: dark;
+    background: var(--night);
+    color: var(--light);
+    font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+}
+.theme-client h1, .theme-client h2, .theme-client .car-title, .theme-client .car-price, .theme-client .brand {
+    font-family: "Chakra Petch", "Segoe UI", sans-serif;
+}
+.theme-client a { color: var(--xenon); }
+
+/* Shell */
+.theme-client .sidebar { background: #080c13; border-right: 1px solid var(--line); }
+.theme-client .brand-mark { background: transparent; border: 1px solid var(--xenon); color: var(--xenon); box-shadow: var(--glow); }
+.theme-client .nav a { color: var(--steel); position: relative; }
+.theme-client .nav a:hover { color: var(--light); background: var(--graphite); }
+.theme-client .nav a.active { background: var(--graphite); color: var(--light); }
+.theme-client .nav a.active::before {
+    content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 3px;
+    background: var(--xenon); box-shadow: var(--glow);
+}
+.theme-client .sidebar-footer a { color: var(--steel); }
+.theme-client .topbar { background: transparent; border-bottom: 1px solid var(--line); }
+.theme-client .topbar h1 { font-size: 22px; letter-spacing: .01em; }
+.theme-client .role-badge { background: transparent; color: var(--xenon); border: 1px solid rgba(63, 212, 255, .4);
+    text-transform: none; letter-spacing: 0; font-size: 12px; }
+.theme-client .user-name { color: var(--light); }
+.theme-client .banner { display: none !important; }
+
+/* Generic surfaces in the customer space */
+.theme-client .card { background: var(--graphite); border-color: var(--line); box-shadow: none; }
+.theme-client .card-head { border-bottom-color: var(--line); }
+.theme-client .muted, .theme-client .empty { color: var(--steel); }
+.theme-client .btn { background: var(--graphite-2); color: var(--light); border-color: var(--line); border-radius: 999px; }
+.theme-client .btn-ghost:hover { background: #243043; }
+.theme-client .btn-primary { background: var(--xenon); color: #04121b; border-color: var(--xenon);
+    box-shadow: 0 0 0 0 rgba(63, 212, 255, 0); transition: box-shadow .2s, transform .2s; }
+.theme-client .btn-primary:hover:not(:disabled) { background: var(--xenon); box-shadow: var(--glow); transform: translateY(-1px); }
+.theme-client .btn-danger { background: transparent; color: var(--brake); border-color: rgba(255, 64, 96, .45); }
+.theme-client .btn-danger:hover { background: rgba(255, 64, 96, .1); box-shadow: 0 0 12px rgba(255, 64, 96, .35); }
+.theme-client .input, .theme-client .field input, .theme-client .field select {
+    background: #0f1520; color: var(--light); border-color: var(--line); border-radius: 10px;
+}
+.theme-client .input::placeholder { color: #5d6a80; }
+.theme-client .input:focus, .theme-client .field input:focus, .theme-client .field select:focus {
+    outline: none; border-color: var(--xenon); box-shadow: 0 0 0 3px rgba(63, 212, 255, .15);
+}
+.theme-client th { background: #111824; color: var(--steel); text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+.theme-client th, .theme-client td { border-bottom-color: var(--line); }
+.theme-client tbody tr:hover { background: #18202d; }
+.theme-client .modal-backdrop { background: rgba(3, 6, 12, .7); backdrop-filter: blur(3px); }
+.theme-client .modal-card { background: var(--graphite); border: 1px solid var(--line); }
+.theme-client .modal-head h2 { font-family: "Chakra Petch", sans-serif; }
+.theme-client .icon-btn { color: var(--steel); }
+.theme-client .field > span { color: var(--steel); }
+.theme-client .form-note { background: rgba(63, 212, 255, .08); color: var(--xenon); border: 1px solid rgba(63, 212, 255, .25);
+    font-family: "Chakra Petch", sans-serif; font-size: 15px; }
+.theme-client .form-error { background: rgba(255, 64, 96, .1); color: #ff8da0; }
+.theme-client .toast { background: var(--graphite-2); border: 1px solid var(--line); }
+.theme-client .toast.success { background: #0e2a22; border-color: rgba(62, 229, 154, .45); color: var(--green-led); }
+.theme-client .toast.error { background: #2a0f16; border-color: rgba(255, 64, 96, .5); color: #ff8da0; }
+
+/* Status lights */
+.status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.status i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.status.s-attente { color: var(--amber-led); }
+.status.s-attente i { animation: blink 1.4s ease-in-out infinite; }
+.status.s-confirmee { color: var(--xenon); }
+.status.s-terminee { color: var(--green-led); }
+.status.s-annulee { color: #6b768a; }
+.status.s-annulee i { box-shadow: none; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* ---------- Hero: night road ---------- */
+.hero {
+    position: relative; overflow: hidden; border-radius: 22px; min-height: 300px;
+    padding: 38px 40px 54px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: center; gap: 12px;
+    background:
+        radial-gradient(ellipse 60% 70% at 78% 105%, rgba(63, 212, 255, .16), transparent 70%),
+        linear-gradient(180deg, #0a1020 0%, #0e1726 55%, #111a28 100%);
+    border: 1px solid var(--line);
+}
+.hero::before { /* distant city lights on the horizon */
+    content: ""; position: absolute; left: 50%; right: 0; bottom: 74px; height: 2px; opacity: .45;
+    background-image: radial-gradient(circle, rgba(255, 196, 120, .9) 0 1px, transparent 1.6px);
+    background-size: 23px 2px;
+}
+.hero-text { position: relative; z-index: 2; max-width: 30ch; }
+.hero-text h2 { font-size: 40px; line-height: 1.05; font-weight: 700; letter-spacing: -.01em; }
+.hero-text p { color: var(--steel); font-size: 15px; margin: 14px 0 0; max-width: 38ch; }
+.hero-scene { position: relative; height: 200px; z-index: 1; align-self: end; margin-bottom: -24px; }
+.road {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: #080c14;
+    border-top: 1px solid #1f2a3b; z-index: 0;
+}
+.road::after { /* lane markings scrolling under the car */
+    content: ""; position: absolute; left: 0; right: 0; top: 21px; height: 4px;
+    background: repeating-linear-gradient(90deg, rgba(231, 236, 244, .55) 0 46px, transparent 46px 92px);
+    animation: lane 0.9s linear infinite;
+}
+@keyframes lane { from { background-position: 0 0; } to { background-position: -92px 0; } }
+.hero-car { position: absolute; left: 0; bottom: 0; width: 100%; max-width: 640px; animation: bob 1.8s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.hero-car .beam { opacity: 0; animation: beam-on 1.6s ease-out .5s forwards; }
+.hero-car .headlight { fill: #33404f; animation: led-on 1.6s steps(1, end) .3s forwards; }
+@keyframes led-on {
+    0% { fill: #33404f; } 15% { fill: var(--xenon); } 22% { fill: #33404f; } 30%, 100% { fill: #dff8ff; }
+}
+@keyframes beam-on { from { opacity: 0; } to { opacity: 1; } }
+.hero-car .wheel-spin { animation: spin .55s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Category switches ---------- */
+.switches { display: flex; flex-wrap: wrap; gap: 8px; }
+.switch {
+    display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    background: #0f1520; border: 1px solid var(--line); color: var(--steel); font: inherit; font-weight: 600;
+}
+.switch i { width: 7px; height: 7px; border-radius: 50%; background: #344054; transition: background .2s, box-shadow .2s; }
+.switch:hover { color: var(--light); }
+.switch.on { color: var(--light); border-color: rgba(63, 212, 255, .5); }
+.switch.on i { background: var(--xenon); box-shadow: var(--glow); }
+.catalogue-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.catalogue-bar .search { width: 280px; }
+
+/* ---------- Car cards ---------- */
+.theme-client .catalogue { grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 18px; }
+.theme-client .car {
+    border-radius: 18px; overflow: hidden; position: relative;
+    transition: transform .25s ease, border-color .25s ease;
+}
+.theme-client .car::after { /* LED underglow, lit on hover */
+    content: ""; position: absolute; left: 18%; right: 18%; bottom: 0; height: 2px; border-radius: 2px;
+    background: var(--xenon); box-shadow: var(--glow); opacity: 0; transition: opacity .25s;
+}
+.theme-client .car:hover, .theme-client .car:focus-within { transform: translateY(-4px); border-color: rgba(63, 212, 255, .45); }
+.theme-client .car:hover::after, .theme-client .car:focus-within::after { opacity: 1; }
+.car-stage {
+    height: 140px; display: grid; place-items: end center; padding: 0 16px 10px;
+    background: radial-gradient(ellipse 70% 40% at 50% 100%, rgba(63, 212, 255, .10), transparent 70%), #10161f;
+    border-bottom: 1px solid var(--line);
+}
+.car-stage svg { width: 100%; max-width: 250px; height: auto; overflow: visible; }
+.car-stage .headlight { fill: #3a4657; transition: fill .2s; }
+.car-stage .beam { opacity: 0; transition: opacity .3s; }
+.car:hover .car-stage .headlight, .car:focus-within .car-stage .headlight { fill: #dff8ff; }
+.car:hover .car-stage .beam, .car:focus-within .car-stage .beam { opacity: .8; }
+.car:hover .car-stage .wheel-spin { animation: spin .6s linear infinite; }
+.theme-client .car .card-body { gap: 6px; padding: 16px 18px 4px; }
+.theme-client .car-title { font-size: 20px; }
+.car-meta { color: var(--steel); font-size: 13px; display: grid; gap: 2px; }
+.car-row { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.theme-client .car-price { font-size: 26px; font-weight: 700; color: var(--light); }
+.theme-client .car-price small { color: var(--steel); font-family: "Manrope", sans-serif; font-weight: 500; }
+.theme-client .car-foot { padding: 14px 18px 18px; }
+
+/* Shared car drawing colours */
+.car-body { fill: #2b3546; stroke: #44526a; stroke-width: 1; }
+.car-window { fill: #0b111a; }
+.car-line { stroke: #3b4759; stroke-width: 1.5; fill: none; }
+.taillight { fill: var(--brake); filter: drop-shadow(0 0 3px rgba(255, 64, 96, .9)); }
+.tyre { fill: #05080d; }
+.rim { fill: #4b5768; }
+.spoke { stroke: #0b1018; stroke-width: 2.2; }
+.wheel-spin { transform-box: fill-box; transform-origin: center; }
+
+/* Reservations and profile in the customer space */
+.theme-client .profile-card .row span:last-child { color: var(--light); }
+.mine-period { font-family: "Chakra Petch", sans-serif; font-size: 14.5px; }
+
+@media (max-width: 820px) {
+    .hero { grid-template-columns: 1fr; padding: 28px 22px; }
+    .hero-text h2 { font-size: 32px; }
+    .hero-scene { height: 150px; }
+    .hero::before { display: none; }
+    .catalogue-bar .search { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .road::after, .hero-car, .hero-car .wheel-spin, .car:hover .car-stage .wheel-spin, .status.s-attente i { animation: none; }
+    .hero-car .beam { animation: none; opacity: 1; }
+    .hero-car .headlight { animation: none; fill: #dff8ff; }
+    .theme-client .car { transition: none; }
+}

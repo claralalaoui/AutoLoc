@@ -176,6 +176,7 @@ async function startSession(auth) {
     $('#user-name').textContent = me.username;
     $('#user-role').textContent = state.isAdmin ? 'Agence' : 'Client';
     $('#client-banner').hidden = state.isAdmin;
+    document.body.classList.toggle('theme-client', !state.isAdmin);
     $('#nav').innerHTML = allowedPages()
         .map((page) => `<a href="#${page}" data-page="${page}">${esc(PAGES[page])}</a>`)
         .join('');
@@ -192,6 +193,7 @@ function logout(message) {
     state.redraw = null;
     $('#content').innerHTML = '';
     sessionStorage.removeItem(STORAGE_KEY);
+    document.body.classList.remove('theme-client');
     closeModal();
     $('#app-view').hidden = true;
     $('#login-view').hidden = false;
@@ -805,21 +807,86 @@ VIEWS.contrats = async () => {
 
 /* ---------- Espace client : louer une voiture ---------- */
 
+/* Side-view silhouettes, one per category (original drawings, the car faces right). */
+const CAR_SHAPES = {
+    BERLINE: {
+        body: 'M12,70 Q12,58 28,55 L66,50 Q88,31 114,29 L152,29 Q174,31 192,49 L226,54 Q238,57 238,67 L238,74 Q238,78 234,78 L16,78 Q12,78 12,74 Z',
+        window: 'M72,50 Q92,35 114,33 L150,33 Q168,35 182,49 Z',
+        wheels: [62, 192], r: 14, light: [228, 58], tail: [12, 58],
+    },
+    CITADINE: {
+        body: 'M28,70 Q28,58 42,54 L66,50 Q82,30 106,27 L150,27 Q170,28 182,44 L204,52 Q218,56 218,66 L218,74 Q218,78 214,78 L32,78 Q28,78 28,74 Z',
+        window: 'M72,50 Q87,33 106,31 L148,31 Q164,32 174,48 Z',
+        wheels: [70, 180], r: 14, light: [208, 57], tail: [28, 57],
+    },
+    SUV: {
+        body: 'M12,68 Q12,52 30,48 L58,46 Q70,22 94,19 L172,19 Q190,20 198,40 L226,46 Q240,50 240,62 L240,74 Q240,80 234,80 L18,80 Q12,80 12,74 Z',
+        window: 'M64,46 Q75,26 94,24 L170,24 Q183,25 190,44 Z',
+        wheels: [62, 196], r: 16, light: [230, 52], tail: [12, 52],
+    },
+    UTILITAIRE: {
+        body: 'M12,76 L12,28 Q12,16 26,16 L168,16 Q184,16 194,31 L214,52 Q232,56 232,66 L232,76 Q232,80 228,80 L16,80 Q12,80 12,76 Z',
+        window: 'M152,22 L170,22 Q181,23 189,35 L201,50 L152,50 Z',
+        wheels: [56, 188], r: 15, light: [222, 57], tail: [12, 40],
+    },
+};
+let carUid = 0;
+
+function carSvg(categorie, { beamLength = 70, viewBox = '-25 0 300 100', label = '' } = {}) {
+    const c = CAR_SHAPES[categorie] || CAR_SHAPES.BERLINE;
+    const id = `beam${carUid++}`;
+    const [lx, ly] = c.light;
+    const bx = lx + 9;
+    const wheel = (x) => `
+        <g class="wheel-spin">
+            <circle class="tyre" cx="${x}" cy="78" r="${c.r}"/>
+            <circle class="rim" cx="${x}" cy="78" r="${c.r * 0.55}"/>
+            <line class="spoke" x1="${x - c.r * 0.55}" y1="78" x2="${x + c.r * 0.55}" y2="78"/>
+            <line class="spoke" x1="${x}" y1="${78 - c.r * 0.55}" x2="${x}" y2="${78 + c.r * 0.55}"/>
+        </g>`;
+    return `
+    <svg viewBox="${viewBox}" role="img" aria-label="${esc(label)}">
+        <defs>
+            <linearGradient id="${id}" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stop-color="#dff8ff" stop-opacity=".75"/>
+                <stop offset="1" stop-color="#3fd4ff" stop-opacity="0"/>
+            </linearGradient>
+        </defs>
+        <polygon class="beam" fill="url(#${id})"
+            points="${bx},${ly} ${bx + beamLength},${ly - 16} ${bx + beamLength},${ly + 26} ${bx},${ly + 4}"/>
+        <ellipse cx="${(c.wheels[0] + c.wheels[1]) / 2}" cy="94" rx="${(c.wheels[1] - c.wheels[0]) / 2 + 30}" ry="4" fill="#000" opacity=".45"/>
+        <path class="car-body" d="${c.body}"/>
+        <path class="car-window" d="${c.window}"/>
+        <rect class="headlight" x="${lx}" y="${ly}" width="9" height="4" rx="2"/>
+        <rect class="taillight" x="${c.tail[0]}" y="${c.tail[1]}" width="4" height="6" rx="1.5"/>
+        ${wheel(c.wheels[0])}${wheel(c.wheels[1])}
+    </svg>`;
+}
+
 VIEWS.louer = async () => {
     const vehicules = await api('GET', '/vehicules');
     const catalogue = vehicules.filter((v) => v.statut !== 'MAINTENANCE');
     state.data.catalogue = catalogue;
+    const current = filters().categorie || '';
+    const switches = [['', 'Toutes'], ...Object.entries(LABELS.categorie)].map(([value, label]) => `
+        <button class="switch ${value === current ? 'on' : ''}" type="button" data-action="filtre-categorie" data-id="${value}">
+            <i></i>${esc(label)}</button>`).join('');
 
     $('#content').innerHTML = `
-        <section class="card">
-            <div class="card-head">
-                <h2>Nos véhicules (${catalogue.length})</h2>
-                <div class="toolbar">
-                    ${searchInput('Rechercher (marque, modèle, ville…)')}
-                    ${filterSelect('categorie', 'Toutes les catégories', LABELS.categorie)}
-                </div>
+        <section class="hero">
+            <div class="hero-text">
+                <h2>La route vous attend.</h2>
+                <p>Choisissez votre véhicule et vos dates. Vous voyez le prix tout de suite, l'agence confirme votre demande.</p>
             </div>
+            <div class="hero-scene" aria-hidden="true">
+                <div class="hero-car">${carSvg('BERLINE', { beamLength: 200, viewBox: '0 0 460 100' })}</div>
+            </div>
+            <div class="road" aria-hidden="true"></div>
         </section>
+        <div class="catalogue-bar">
+            <div class="switches">${switches}</div>
+            ${searchInput('Marque, modèle ou agence')}
+        </div>
         <div id="table-zone"></div>`;
 
     state.redraw = () => {
@@ -829,21 +896,38 @@ VIEWS.louer = async () => {
             .filter((v) => matches(v, f.q, ['marque', 'modele', 'agenceNom']));
         $('#table-zone').innerHTML = cars.length ? `<div class="catalogue">${cars.map((v) => `
             <article class="card car">
-                <div class="car-visual">${esc(LABELS.categorie[v.categorie] || v.categorie)}</div>
+                <div class="car-stage">${carSvg(v.categorie, { label: `${v.marque} ${v.modele}` })}</div>
                 <div class="card-body">
                     <div class="car-title">${esc(v.marque)} ${esc(v.modele)}</div>
-                    <div class="muted">${esc(v.immatriculation)}${v.agenceNom ? ' · ' + esc(v.agenceNom) : ''}</div>
-                    <div class="car-price">${money(v.tarifJournalier)} <small>/ jour</small></div>
-                    ${v.statut === 'LOUE'
-                        ? '<div><span class="badge b-blue">Loué en ce moment</span> <span class="muted">réservable à d\'autres dates</span></div>'
-                        : '<div><span class="badge b-green">Disponible</span></div>'}
+                    <div class="car-meta">
+                        <span>${esc(LABELS.categorie[v.categorie] || v.categorie)}, immatriculé ${esc(v.immatriculation)}</span>
+                        ${v.agenceNom ? `<span>À retirer : ${esc(v.agenceNom)}</span>` : ''}
+                    </div>
+                    <div class="car-row">
+                        <div class="car-price">${money(v.tarifJournalier)} <small>par jour</small></div>
+                        ${v.statut === 'LOUE'
+                            ? '<span class="status s-confirmee" title="Déjà loué, vous pouvez le réserver à d\'autres dates"><i></i>En location</span>'
+                            : '<span class="status s-terminee"><i></i>Libre</span>'}
+                    </div>
                 </div>
                 <div class="car-foot">${actionButton('louer', v.id, 'Louer ce véhicule', 'btn-primary btn-block')}</div>
             </article>`).join('')}</div>`
-            : '<div class="card empty">Aucun véhicule ne correspond à votre recherche.</div>';
+            : '<div class="card empty">Aucun véhicule ne correspond. Essayez une autre catégorie.</div>';
     };
     state.redraw();
 };
+
+/** Status shown as a small light, used in the customer space. */
+function statusLight(statut) {
+    const map = {
+        EN_ATTENTE: ['s-attente', 'En attente de l\'agence'],
+        CONFIRMEE: ['s-confirmee', 'Confirmée'],
+        TERMINEE: ['s-terminee', 'Terminée'],
+        ANNULEE: ['s-annulee', 'Annulée'],
+    };
+    const [cls, label] = map[statut] || ['s-annulee', statut];
+    return `<span class="status ${cls}"><i></i>${esc(label)}</span>`;
+}
 
 VIEWS['mes-reservations'] = async () => {
     const reservations = await api('GET', '/me/reservations');
@@ -859,9 +943,9 @@ VIEWS['mes-reservations'] = async () => {
         <tr>
             <td class="muted">n°${r.id}</td>
             <td class="strong">${esc(r.vehiculeLibelle)}</td>
-            <td>${formatDate(r.dateDebut)} → ${formatDate(r.dateFin)}<div class="muted">${r.nombreJours} jour(s)</div></td>
+            <td><span class="mine-period">du ${formatDate(r.dateDebut)} au ${formatDate(r.dateFin)}</span><div class="muted">${r.nombreJours} jour(s)</div></td>
             <td class="num">${money(r.montantEstime)}</td>
-            <td>${badge(LABELS.statutReservation, r.statut)}</td>
+            <td>${statusLight(r.statut)}</td>
             <td><div class="actions">${r.statut === 'EN_ATTENTE'
                 ? actionButton('ma-reservation-cancel', r.id, 'Annuler ma demande', 'btn-danger') : ''}</div></td>
         </tr>`);
@@ -874,7 +958,7 @@ VIEWS['mes-reservations'] = async () => {
                 { label: 'Montant', num: true }, { label: 'Statut' }, { label: '' },
             ], rows, '')}
         </section>
-        <p class="muted" style="margin:0">« En attente » : l'agence n'a pas encore validé votre demande. « Confirmée » : le véhicule vous est réservé.</p>`;
+        <p class="muted" style="margin:0">Tant que le voyant clignote, l'agence n'a pas encore validé votre demande. Une fois confirmée, le véhicule vous est réservé.</p>`;
 };
 
 VIEWS.profil = async () => {
@@ -964,6 +1048,11 @@ const ACTIONS = {
         }
     },
     'profil-edit': () => openProfilForm(state.data.profil),
+    'filtre-categorie': (value) => {
+        state.filters[state.page] = { ...filters(), categorie: value };
+        document.querySelectorAll('.switch').forEach((b) => b.classList.toggle('on', b.dataset.id === value));
+        if (state.redraw) state.redraw();
+    },
     'ma-reservation-cancel': (id) => confirmAction('Annuler ma demande', `Annuler la demande de réservation n°${id} ?`,
         'Annuler la demande', async () => {
             await api('POST', `/me/reservations/${id}/annulation`);
