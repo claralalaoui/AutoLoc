@@ -1,0 +1,1073 @@
+'use strict';
+
+/* =========================================================================
+ * AutoLoc web interface
+ * Calls the REST API under /api with HTTP Basic credentials.
+ * ========================================================================= */
+
+const LABELS = {
+    statutVehicule: {
+        DISPONIBLE: ['Disponible', 'b-green'],
+        LOUE: ['Loué', 'b-blue'],
+        MAINTENANCE: ['Maintenance', 'b-amber'],
+    },
+    categorie: { CITADINE: 'Citadine', BERLINE: 'Berline', SUV: 'SUV', UTILITAIRE: 'Utilitaire' },
+    statutReservation: {
+        EN_ATTENTE: ['En attente', 'b-amber'],
+        CONFIRMEE: ['Confirmée', 'b-blue'],
+        TERMINEE: ['Terminée', 'b-green'],
+        ANNULEE: ['Annulée', 'b-grey'],
+    },
+    modePaiement: { CARTE: 'Carte', ESPECES: 'Espèces', VIREMENT: 'Virement' },
+};
+
+const PAGES = {
+    dashboard: 'Tableau de bord',
+    vehicules: 'Véhicules',
+    agences: 'Agences',
+    clients: 'Clients',
+    reservations: 'Réservations',
+    contrats: 'Contrats',
+    louer: 'Louer une voiture',
+    'mes-reservations': 'Mes réservations',
+    profil: 'Mon profil',
+};
+
+/** Pages shown in the menu for each kind of account (the first one is the home page). */
+const NAV = {
+    admin: ['dashboard', 'vehicules', 'agences', 'clients', 'reservations', 'contrats'],
+    client: ['louer', 'mes-reservations', 'profil'],
+};
+
+const STORAGE_KEY = 'autoloc.auth';
+
+const state = {
+    auth: null,
+    user: null,
+    isAdmin: false,
+    page: 'dashboard',
+    data: {},
+    filters: {},
+    redraw: null,
+};
+
+/* ---------- Helpers ---------- */
+
+const $ = (selector) => document.querySelector(selector);
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+}
+
+const euroFormat = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const money = (v) => (v == null ? '—' : euroFormat.format(Number(v)));
+
+function formatDate(iso) {
+    if (!iso) return '—';
+    const [y, m, d] = String(iso).slice(0, 10).split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function todayIso() {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(start, end) {
+    const ms = new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00');
+    return Math.round(ms / 86400000) + 1;
+}
+
+function badge(map, key) {
+    const [label, cls] = map[key] || [key, 'b-grey'];
+    return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+
+function options(map, selected) {
+    return Object.entries(map).map(([value, label]) => ({
+        value,
+        label: Array.isArray(label) ? label[0] : label,
+        selected: value === selected,
+    }));
+}
+
+function normalize(text) {
+    return String(text ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function matches(item, query, keys) {
+    if (!query) return true;
+    const q = normalize(query);
+    return keys.some((k) => normalize(item[k]).includes(q));
+}
+
+function toast(message, type = '') {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = message;
+    $('#toasts').appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+}
+
+/* ---------- API ---------- */
+
+class ApiError extends Error {
+    constructor(status, message, details = []) {
+        super(message);
+        this.status = status;
+        this.details = details;
+    }
+}
+
+async function api(method, path, body) {
+    const headers = {
+        Authorization: 'Basic ' + state.auth,
+        'X-Requested-With': 'XMLHttpRequest',
+        Accept: 'application/json',
+    };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+
+    const response = await fetch('/api' + path, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+
+    if (response.status === 401) {
+        throw new ApiError(401, 'Identifiant ou mot de passe incorrect.');
+    }
+    if (response.status === 403) {
+        throw new ApiError(403, "Action réservée à l'administrateur.");
+    }
+    if (response.status === 204) return null;
+
+    const text = await response.text();
+    let data = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = null;
+    }
+    if (!response.ok) {
+        throw new ApiError(response.status, data?.message || `Erreur ${response.status}`, data?.details || []);
+    }
+    return data;
+}
+
+/* ---------- Authentication ---------- */
+
+function encodeCredentials(username, password) {
+    const bytes = new TextEncoder().encode(`${username}:${password}`);
+    let binary = '';
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
+    return btoa(binary);
+}
+
+async function startSession(auth) {
+    state.auth = auth;
+    const me = await api('GET', '/me');
+    state.user = me;
+    state.isAdmin = me.roles.includes('ROLE_ADMIN');
+    sessionStorage.setItem(STORAGE_KEY, auth);
+
+    $('#user-name').textContent = me.username;
+    $('#user-role').textContent = state.isAdmin ? 'Agence' : 'Client';
+    $('#client-banner').hidden = state.isAdmin;
+    $('#nav').innerHTML = allowedPages()
+        .map((page) => `<a href="#${page}" data-page="${page}">${esc(PAGES[page])}</a>`)
+        .join('');
+    $('#login-view').hidden = true;
+    $('#app-view').hidden = false;
+    route();
+}
+
+function logout(message) {
+    state.auth = null;
+    state.user = null;
+    state.data = {};
+    state.filters = {};
+    state.redraw = null;
+    $('#content').innerHTML = '';
+    sessionStorage.removeItem(STORAGE_KEY);
+    closeModal();
+    $('#app-view').hidden = true;
+    $('#login-view').hidden = false;
+    const form = $('#login-form');
+    form.password.value = '';
+    if (!message) form.username.value = '';
+    const error = $('#login-error');
+    error.hidden = !message;
+    error.textContent = message || '';
+}
+
+$('#login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+        await startSession(encodeCredentials(form.username.value.trim(), form.password.value));
+    } catch (error) {
+        logout(error.status === 401 ? 'Identifiant ou mot de passe incorrect.' : 'Serveur injoignable. L\'application est-elle lancée ?');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+$('#logout').addEventListener('click', () => logout());
+
+/* ---------- Routing ---------- */
+
+window.addEventListener('hashchange', route);
+
+function allowedPages() {
+    return state.isAdmin ? NAV.admin : NAV.client;
+}
+
+async function route() {
+    if (!state.auth) return;
+    const page = location.hash.slice(1);
+    const allowed = allowedPages();
+    state.page = allowed.includes(page) ? page : allowed[0];
+    document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === state.page));
+    $('#page-title').textContent = PAGES[state.page];
+    $('#content').innerHTML = '<div class="card empty">Chargement…</div>';
+    await refresh();
+}
+
+async function refresh() {
+    const content = $('#content');
+    try {
+        await VIEWS[state.page]();
+    } catch (error) {
+        if (error.status === 401) {
+            logout('Session expirée, reconnectez-vous.');
+            return;
+        }
+        content.innerHTML = `<div class="card empty">Impossible de charger les données : ${esc(error.message)}</div>`;
+    }
+}
+
+/* ---------- Generic UI pieces ---------- */
+
+function table(headers, rows, emptyText) {
+    if (!rows.length) return `<div class="empty">${esc(emptyText)}</div>`;
+    const head = headers.map((h) => `<th class="${h.num ? 'num' : ''}">${esc(h.label)}</th>`).join('');
+    return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+}
+
+function actionButton(action, id, label, style = 'btn-ghost') {
+    return `<button class="btn btn-sm ${style}" type="button" data-action="${action}" data-id="${esc(id)}">${esc(label)}</button>`;
+}
+
+function searchInput(placeholder) {
+    const value = state.filters[state.page]?.q ?? '';
+    return `<input class="input search" type="search" placeholder="${esc(placeholder)}" data-filter="q" value="${esc(value)}">`;
+}
+
+function filterSelect(name, allLabel, map) {
+    const current = state.filters[state.page]?.[name] ?? '';
+    const opts = Object.entries(map).map(([value, label]) => {
+        const text = Array.isArray(label) ? label[0] : label;
+        return `<option value="${esc(value)}" ${value === current ? 'selected' : ''}>${esc(text)}</option>`;
+    }).join('');
+    return `<select class="input" data-filter="${name}"><option value="">${esc(allLabel)}</option>${opts}</select>`;
+}
+
+function filters() {
+    return state.filters[state.page] || {};
+}
+
+/** Renders a page with a card that contains a toolbar and a table zone redrawn on filter changes. */
+function listLayout(title, toolbarHtml, drawTable) {
+    $('#content').innerHTML = `
+        <section class="card">
+            <div class="card-head">
+                <h2>${esc(title)}</h2>
+                <div class="toolbar">${toolbarHtml}</div>
+            </div>
+            <div id="table-zone"></div>
+        </section>`;
+    state.redraw = () => { $('#table-zone').innerHTML = drawTable(); };
+    state.redraw();
+}
+
+$('#content').addEventListener('input', (event) => {
+    const name = event.target.dataset.filter;
+    if (!name) return;
+    state.filters[state.page] = { ...filters(), [name]: event.target.value };
+    if (state.redraw) state.redraw();
+});
+
+$('#content').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const handler = ACTIONS[button.dataset.action];
+    if (handler) handler(button.dataset.id);
+});
+
+/* ---------- Modal, forms, confirmations ---------- */
+
+function openModal(title, html) {
+    $('#modal-title').textContent = title;
+    $('#modal-body').innerHTML = html;
+    $('#modal').hidden = false;
+    const first = $('#modal-body').querySelector('input, select, button');
+    if (first) first.focus();
+}
+
+function closeModal() {
+    $('#modal').hidden = true;
+    $('#modal-body').innerHTML = '';
+}
+
+$('#modal').addEventListener('click', (event) => {
+    if (event.target.closest('[data-close]')) closeModal();
+});
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !$('#modal').hidden) closeModal();
+});
+
+function fieldHtml(f, value) {
+    const required = f.required ? 'required' : '';
+    const cls = f.full ? 'field full' : 'field';
+    if (f.type === 'select') {
+        const empty = f.emptyLabel !== undefined ? `<option value="">${esc(f.emptyLabel)}</option>` : '';
+        const opts = f.options.map((o) => {
+            const selected = String(o.value) === String(value ?? '') ? 'selected' : '';
+            return `<option value="${esc(o.value)}" ${selected}>${esc(o.label)}</option>`;
+        }).join('');
+        return `<label class="${cls}"><span>${esc(f.label)}</span><select name="${f.name}" ${required}>${empty}${opts}</select></label>`;
+    }
+    const extra = [
+        f.step ? `step="${f.step}"` : '',
+        f.min !== undefined ? `min="${f.min}"` : '',
+        f.max !== undefined ? `max="${f.max}"` : '',
+        f.maxlength ? `maxlength="${f.maxlength}"` : '',
+    ].join(' ');
+    return `<label class="${cls}"><span>${esc(f.label)}</span>
+        <input name="${f.name}" type="${f.type || 'text'}" value="${esc(value ?? '')}" ${required} ${extra}></label>`;
+}
+
+/**
+ * Opens a form in the modal.
+ * fields: [{ name, label, type, required, options, parse: 'number' | 'id', full, ... }]
+ */
+function openForm({ title, fields, values = {}, submitLabel = 'Enregistrer', onSubmit, onChange, note, after }) {
+    const html = `
+        <form id="entity-form" novalidate>
+            <div class="form-grid">${fields.map((f) => fieldHtml(f, values[f.name])).join('')}</div>
+            <p id="form-note" class="form-note" ${note ? '' : 'hidden'} style="margin-top:14px">${esc(note || '')}</p>
+            <p id="form-error" class="form-error" hidden style="margin-top:14px"></p>
+            <div class="form-actions">
+                <button class="btn btn-ghost" type="button" data-close>Annuler</button>
+                <button class="btn btn-primary" type="submit">${esc(submitLabel)}</button>
+            </div>
+        </form>`;
+    openModal(title, html);
+
+    const form = $('#entity-form');
+    const read = () => {
+        const data = {};
+        fields.forEach((f) => {
+            const raw = form.elements[f.name].value.trim();
+            if (f.parse === 'number' || f.parse === 'id') data[f.name] = raw === '' ? null : Number(raw);
+            else data[f.name] = raw === '' ? null : raw;
+        });
+        return data;
+    };
+    const showNote = (text) => {
+        const el = $('#form-note');
+        el.hidden = !text;
+        el.textContent = text || '';
+    };
+
+    if (onChange) {
+        form.addEventListener('input', () => showNote(onChange(read())));
+        showNote(onChange(read()));
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const errorBox = $('#form-error');
+        if (!form.checkValidity()) {
+            errorBox.hidden = false;
+            errorBox.textContent = 'Remplissez correctement les champs obligatoires.';
+            form.reportValidity();
+            return;
+        }
+        const button = form.querySelector('button[type=submit]');
+        button.disabled = true;
+        try {
+            await onSubmit(read());
+            closeModal();
+            await refresh();
+            if (after) after();
+        } catch (error) {
+            errorBox.hidden = false;
+            errorBox.innerHTML = esc(error.message) + (error.details?.length
+                ? '<br>' + error.details.map(esc).join('<br>') : '');
+        } finally {
+            button.disabled = false;
+        }
+    });
+}
+
+function confirmAction(title, message, confirmLabel, run) {
+    openModal(title, `
+        <p style="margin:0 0 6px">${esc(message)}</p>
+        <p id="form-error" class="form-error" hidden style="margin-top:14px"></p>
+        <div class="form-actions">
+            <button class="btn btn-ghost" type="button" data-close>Annuler</button>
+            <button class="btn btn-primary" type="button" id="confirm-btn">${esc(confirmLabel)}</button>
+        </div>`);
+    const button = $('#confirm-btn');
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+            const done = await run();
+            closeModal();
+            if (done) toast(done, 'success');
+            await refresh();
+        } catch (error) {
+            const box = $('#form-error');
+            box.hidden = false;
+            box.textContent = error.message;
+            button.disabled = false;
+        }
+    });
+}
+
+/* =========================================================================
+ * Views
+ * ========================================================================= */
+
+const VIEWS = {};
+
+/* ---------- Dashboard ---------- */
+
+VIEWS.dashboard = async () => {
+    const [d, reservations, contrats] = await Promise.all([
+        api('GET', '/dashboard'), api('GET', '/reservations'), api('GET', '/contrats'),
+    ]);
+    state.redraw = null;
+
+    const total = d.vehicules || 1;
+    const part = (n) => `${(n / total) * 100}%`;
+    const today = todayIso();
+    const upcoming = reservations
+        .filter((r) => (r.statut === 'EN_ATTENTE' || r.statut === 'CONFIRMEE') && r.dateFin >= today)
+        .sort((a, b) => a.dateDebut.localeCompare(b.dateDebut))
+        .slice(0, 6);
+    const unpaid = contrats.filter((c) => Number(c.resteAPayer) > 0).slice(0, 6);
+
+    const kpi = (label, value, sub = '') => `
+        <div class="card kpi">
+            <div class="kpi-label">${esc(label)}</div>
+            <div class="kpi-value">${esc(value)}</div>
+            ${sub ? `<div class="kpi-sub">${esc(sub)}</div>` : ''}
+        </div>`;
+
+    $('#content').innerHTML = `
+        <div class="kpis">
+            ${kpi('Véhicules', d.vehicules, `${d.vehiculesDisponibles} disponibles`)}
+            ${kpi('Agences', d.agences)}
+            ${kpi('Clients', d.clients)}
+            ${kpi('Réservations actives', d.reservationsActives, 'en attente ou confirmées')}
+            ${kpi('Contrats', d.contrats)}
+            ${kpi('Total encaissé', money(d.totalEncaisse))}
+        </div>
+
+        <section class="card">
+            <div class="card-head"><h2>État de la flotte</h2><span class="muted">${d.vehicules} véhicule(s)</span></div>
+            <div class="card-body">
+                <div class="stack-bar">
+                    <span style="width:${part(d.vehiculesDisponibles)};background:var(--green)"></span>
+                    <span style="width:${part(d.vehiculesLoues)};background:var(--blue)"></span>
+                    <span style="width:${part(d.vehiculesEnMaintenance)};background:#e8a33d"></span>
+                </div>
+                <div class="legend">
+                    <span><i class="dot" style="background:var(--green)"></i>Disponibles : ${d.vehiculesDisponibles}</span>
+                    <span><i class="dot" style="background:var(--blue)"></i>Loués : ${d.vehiculesLoues}</span>
+                    <span><i class="dot" style="background:#e8a33d"></i>En maintenance : ${d.vehiculesEnMaintenance}</span>
+                </div>
+            </div>
+        </section>
+
+        <div class="grid-2">
+            <section class="card">
+                <div class="card-head"><h2>Prochaines réservations</h2><a href="#reservations">Tout voir</a></div>
+                <div class="list">
+                    ${upcoming.length ? upcoming.map((r) => `
+                        <div class="list-item">
+                            <div>
+                                <div class="strong">${esc(r.clientNom)}</div>
+                                <div class="muted">${esc(r.vehiculeLibelle)} · ${formatDate(r.dateDebut)} → ${formatDate(r.dateFin)}</div>
+                            </div>
+                            ${badge(LABELS.statutReservation, r.statut)}
+                        </div>`).join('') : '<div class="empty">Aucune réservation à venir.</div>'}
+                </div>
+            </section>
+            <section class="card">
+                <div class="card-head"><h2>Contrats à encaisser</h2><a href="#contrats">Tout voir</a></div>
+                <div class="list">
+                    ${unpaid.length ? unpaid.map((c) => `
+                        <div class="list-item">
+                            <div>
+                                <div class="strong">Contrat n°${c.id}</div>
+                                <div class="muted">${esc(c.clientNom || 'Sans réservation liée')}</div>
+                            </div>
+                            <span class="badge b-amber">Reste ${money(c.resteAPayer)}</span>
+                        </div>`).join('') : '<div class="empty">Tous les contrats sont soldés.</div>'}
+                </div>
+            </section>
+        </div>`;
+};
+
+/* ---------- Véhicules ---------- */
+
+VIEWS.vehicules = async () => {
+    const [vehicules, agences] = await Promise.all([api('GET', '/vehicules'), api('GET', '/agences')]);
+    state.data.vehicules = vehicules;
+    state.data.agences = agences;
+
+    const toolbar = `
+        ${searchInput('Rechercher (immatriculation, marque…)')}
+        ${filterSelect('statut', 'Tous les statuts', LABELS.statutVehicule)}
+        ${state.isAdmin ? '<button class="btn btn-primary" type="button" data-action="vehicule-new">Ajouter un véhicule</button>' : ''}`;
+
+    listLayout(`Flotte (${vehicules.length})`, toolbar, () => {
+        const f = filters();
+        const rows = vehicules
+            .filter((v) => !f.statut || v.statut === f.statut)
+            .filter((v) => matches(v, f.q, ['immatriculation', 'marque', 'modele', 'agenceNom']))
+            .map((v) => `
+                <tr>
+                    <td class="strong">${esc(v.immatriculation)}</td>
+                    <td>${esc(v.marque)} ${esc(v.modele)}</td>
+                    <td>${esc(LABELS.categorie[v.categorie] || v.categorie)}</td>
+                    <td class="num">${money(v.tarifJournalier)}</td>
+                    <td>${badge(LABELS.statutVehicule, v.statut)}</td>
+                    <td>${v.agenceNom ? esc(v.agenceNom) : '<span class="muted">Non affecté</span>'}</td>
+                    <td>${state.isAdmin ? `<div class="actions">
+                        ${actionButton('vehicule-edit', v.id, 'Modifier')}
+                        ${actionButton('vehicule-delete', v.id, 'Supprimer', 'btn-danger')}</div>` : ''}</td>
+                </tr>`);
+        return table([
+            { label: 'Immatriculation' }, { label: 'Modèle' }, { label: 'Catégorie' },
+            { label: 'Tarif / jour', num: true }, { label: 'Statut' }, { label: 'Agence' }, { label: '' },
+        ], rows, 'Aucun véhicule ne correspond.');
+    });
+};
+
+function vehiculeFields() {
+    return [
+        { name: 'immatriculation', label: 'Immatriculation', required: true, maxlength: 20 },
+        { name: 'marque', label: 'Marque', required: true, maxlength: 50 },
+        { name: 'modele', label: 'Modèle', required: true, maxlength: 50 },
+        { name: 'categorie', label: 'Catégorie', type: 'select', required: true, options: options(LABELS.categorie) },
+        { name: 'tarifJournalier', label: 'Tarif journalier (€)', type: 'number', step: '0.01', min: '0.01', required: true, parse: 'number' },
+        { name: 'statut', label: 'Statut', type: 'select', required: true, options: options(LABELS.statutVehicule) },
+        {
+            name: 'agenceId', label: 'Agence', type: 'select', parse: 'id', full: true, emptyLabel: 'Aucune agence',
+            options: (state.data.agences || []).map((a) => ({ value: a.id, label: `${a.nom} (${a.ville})` })),
+        },
+    ];
+}
+
+/* ---------- Agences ---------- */
+
+VIEWS.agences = async () => {
+    const agences = await api('GET', '/agences');
+    state.data.agences = agences;
+    const toolbar = `
+        ${searchInput('Rechercher (nom, ville…)')}
+        ${state.isAdmin ? '<button class="btn btn-primary" type="button" data-action="agence-new">Ajouter une agence</button>' : ''}`;
+
+    listLayout(`Agences (${agences.length})`, toolbar, () => {
+        const rows = agences
+            .filter((a) => matches(a, filters().q, ['nom', 'ville', 'adresse']))
+            .map((a) => `
+                <tr>
+                    <td class="strong">${esc(a.nom)}</td>
+                    <td>${esc(a.ville)}</td>
+                    <td>${esc(a.adresse)}</td>
+                    <td>${esc(a.telephone || '—')}</td>
+                    <td class="num">${a.nombreVehicules}</td>
+                    <td>${state.isAdmin ? `<div class="actions">
+                        ${actionButton('agence-edit', a.id, 'Modifier')}
+                        ${actionButton('agence-delete', a.id, 'Supprimer', 'btn-danger')}</div>` : ''}</td>
+                </tr>`);
+        return table([
+            { label: 'Nom' }, { label: 'Ville' }, { label: 'Adresse' }, { label: 'Téléphone' },
+            { label: 'Véhicules', num: true }, { label: '' },
+        ], rows, 'Aucune agence pour le moment.');
+    });
+};
+
+const AGENCE_FIELDS = [
+    { name: 'nom', label: 'Nom', required: true, maxlength: 100 },
+    { name: 'ville', label: 'Ville', required: true, maxlength: 50 },
+    { name: 'adresse', label: 'Adresse', required: true, full: true, maxlength: 255 },
+    { name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20 },
+];
+
+/* ---------- Clients ---------- */
+
+VIEWS.clients = async () => {
+    const clients = await api('GET', '/clients');
+    state.data.clients = clients;
+    const toolbar = `
+        ${searchInput('Rechercher (nom, email, permis…)')}
+        ${state.isAdmin ? '<button class="btn btn-primary" type="button" data-action="client-new">Ajouter un client</button>' : ''}`;
+
+    listLayout(`Clients (${clients.length})`, toolbar, () => {
+        const rows = clients
+            .filter((c) => matches(c, filters().q, ['nom', 'prenom', 'email', 'numPermis']))
+            .map((c) => `
+                <tr>
+                    <td class="strong">${esc(c.prenom)} ${esc(c.nom)}</td>
+                    <td>${esc(c.email)}</td>
+                    <td>${esc(c.telephone || '—')}</td>
+                    <td>${esc(c.numPermis)}</td>
+                    <td>${formatDate(c.dateInscription)}</td>
+                    <td>${state.isAdmin ? `<div class="actions">
+                        ${actionButton('client-edit', c.id, 'Modifier')}
+                        ${actionButton('client-delete', c.id, 'Supprimer', 'btn-danger')}</div>` : ''}</td>
+                </tr>`);
+        return table([
+            { label: 'Client' }, { label: 'Email' }, { label: 'Téléphone' }, { label: 'Permis' },
+            { label: 'Inscription' }, { label: '' },
+        ], rows, 'Aucun client pour le moment.');
+    });
+};
+
+const CLIENT_FIELDS = [
+    { name: 'prenom', label: 'Prénom', required: true, maxlength: 50 },
+    { name: 'nom', label: 'Nom', required: true, maxlength: 50 },
+    { name: 'email', label: 'Email', type: 'email', required: true, full: true, maxlength: 100 },
+    { name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20 },
+    { name: 'numPermis', label: 'N° de permis', required: true, maxlength: 30 },
+];
+
+/* ---------- Réservations ---------- */
+
+VIEWS.reservations = async () => {
+    const reservations = await api('GET', '/reservations');
+    state.data.reservations = reservations;
+    const toolbar = `
+        ${searchInput('Rechercher (client, véhicule…)')}
+        ${filterSelect('statut', 'Tous les statuts', LABELS.statutReservation)}
+        ${state.isAdmin ? '<button class="btn btn-primary" type="button" data-action="reservation-new">Nouvelle réservation</button>' : ''}`;
+
+    listLayout(`Réservations (${reservations.length})`, toolbar, () => {
+        const f = filters();
+        const rows = reservations
+            .filter((r) => !f.statut || r.statut === f.statut)
+            .filter((r) => matches(r, f.q, ['clientNom', 'vehiculeLibelle']))
+            .map((r) => `
+                <tr>
+                    <td class="muted">n°${r.id}</td>
+                    <td class="strong">${esc(r.clientNom)}</td>
+                    <td>${esc(r.vehiculeLibelle)}</td>
+                    <td>${formatDate(r.dateDebut)} → ${formatDate(r.dateFin)}<div class="muted">${r.nombreJours} jour(s)</div></td>
+                    <td class="num">${money(r.montantEstime)}</td>
+                    <td>${badge(LABELS.statutReservation, r.statut)}</td>
+                    <td><div class="actions">${reservationActions(r)}</div></td>
+                </tr>`);
+        return table([
+            { label: 'N°' }, { label: 'Client' }, { label: 'Véhicule' }, { label: 'Période' },
+            { label: 'Montant', num: true }, { label: 'Statut' }, { label: '' },
+        ], rows, 'Aucune réservation ne correspond.');
+    });
+};
+
+function reservationActions(r) {
+    const buttons = [];
+    if (r.contratId) buttons.push(`<a class="btn btn-sm btn-ghost" href="#contrats">Contrat n°${r.contratId}</a>`);
+    if (!state.isAdmin) return buttons.join('');
+    if (r.statut === 'EN_ATTENTE') {
+        buttons.push(actionButton('reservation-confirm', r.id, 'Confirmer', 'btn-primary'));
+        buttons.push(actionButton('reservation-cancel', r.id, 'Annuler'));
+    }
+    if (r.statut === 'CONFIRMEE') {
+        buttons.push(actionButton('reservation-finish', r.id, 'Terminer'));
+        buttons.push(actionButton('reservation-cancel', r.id, 'Annuler'));
+    }
+    if ((r.statut === 'CONFIRMEE' || r.statut === 'TERMINEE') && !r.contratId) {
+        buttons.push(actionButton('reservation-contract', r.id, 'Créer le contrat', 'btn-primary'));
+    }
+    if ((r.statut === 'EN_ATTENTE' || r.statut === 'ANNULEE') && !r.contratId) {
+        buttons.push(actionButton('reservation-delete', r.id, 'Supprimer', 'btn-danger'));
+    }
+    return buttons.join('');
+}
+
+async function openReservationForm() {
+    const [clients, vehicules] = await Promise.all([api('GET', '/clients'), api('GET', '/vehicules')]);
+    const reservables = vehicules.filter((v) => v.statut !== 'MAINTENANCE');
+    if (!clients.length || !reservables.length) {
+        toast('Il faut au moins un client et un véhicule hors maintenance pour créer une réservation.', 'error');
+        return;
+    }
+    const tarifs = Object.fromEntries(vehicules.map((v) => [v.id, Number(v.tarifJournalier)]));
+    const today = todayIso();
+
+    openForm({
+        title: 'Nouvelle réservation',
+        submitLabel: 'Créer la réservation',
+        values: { dateDebut: today, dateFin: today },
+        fields: [
+            {
+                name: 'clientId', label: 'Client', type: 'select', required: true, parse: 'id', full: true, emptyLabel: 'Choisir un client',
+                options: clients.map((c) => ({ value: c.id, label: `${c.prenom} ${c.nom} (${c.email})` })),
+            },
+            {
+                name: 'vehiculeId', label: 'Véhicule', type: 'select', required: true, parse: 'id', full: true, emptyLabel: 'Choisir un véhicule',
+                options: reservables.map((v) => ({
+                    value: v.id,
+                    label: `${v.marque} ${v.modele} · ${v.immatriculation} · ${money(v.tarifJournalier)}/jour`,
+                })),
+            },
+            { name: 'dateDebut', label: 'Début', type: 'date', required: true },
+            { name: 'dateFin', label: 'Fin', type: 'date', required: true },
+        ],
+        onChange: (data) => {
+            if (!data.vehiculeId || !data.dateDebut || !data.dateFin) return '';
+            if (data.dateFin < data.dateDebut) return 'La date de fin doit être après la date de début.';
+            const jours = daysBetween(data.dateDebut, data.dateFin);
+            return `Estimation : ${jours} jour(s) × ${money(tarifs[data.vehiculeId])} = ${money(jours * tarifs[data.vehiculeId])}`;
+        },
+        onSubmit: async (data) => {
+            await api('POST', '/reservations', data);
+            toast('Réservation créée.', 'success');
+        },
+    });
+}
+
+function changeStatut(id, statut, title, message, label) {
+    confirmAction(title, message, label, async () => {
+        await api('PATCH', `/reservations/${id}/statut`, { statut });
+        return 'Réservation mise à jour.';
+    });
+}
+
+/* ---------- Contrats ---------- */
+
+VIEWS.contrats = async () => {
+    const contrats = await api('GET', '/contrats');
+    state.data.contrats = contrats;
+    state.redraw = null;
+
+    if (!contrats.length) {
+        $('#content').innerHTML = `<div class="card empty">Aucun contrat. Confirmez une réservation puis cliquez sur « Créer le contrat ».</div>`;
+        return;
+    }
+
+    $('#content').innerHTML = `<div class="contracts">${contrats.map((c) => {
+        const paid = Number(c.totalPaye);
+        const total = Number(c.montantTotal) || 1;
+        const percent = Math.min(100, (paid / total) * 100);
+        const reste = Number(c.resteAPayer);
+        return `
+        <article class="card contract">
+            <div class="card-head">
+                <h2>Contrat n°${c.id}</h2>
+                ${c.valide ? '<span class="badge b-green">Valide</span>' : '<span class="badge b-grey">Invalide</span>'}
+            </div>
+            <div class="card-body">
+                <div class="row"><span class="muted">Client</span><span class="strong">${esc(c.clientNom || '—')}</span></div>
+                <div class="row"><span class="muted">Véhicule</span><span>${esc(c.vehiculeLibelle || '—')}</span></div>
+                <div class="row"><span class="muted">Signé le</span><span>${formatDate(c.dateSignature)}</span></div>
+                <div class="row"><span class="muted">Montant total</span><span class="strong">${money(c.montantTotal)}</span></div>
+                <div>
+                    <div class="row" style="margin-bottom:6px">
+                        <span class="muted">Payé ${money(c.totalPaye)}</span>
+                        <span class="${reste > 0 ? '' : 'muted'}">${reste > 0 ? `Reste ${money(reste)}` : 'Soldé'}</span>
+                    </div>
+                    <div class="progress"><span style="width:${percent}%"></span></div>
+                </div>
+                <ul class="pay-list">
+                    ${c.paiements.length ? c.paiements.map((p) => `
+                        <li><span>${formatDate(p.datePaiement)} · ${esc(LABELS.modePaiement[p.modePaiement] || p.modePaiement)}</span>
+                            <span class="strong">${money(p.montant)}</span></li>`).join('')
+                        : '<li class="muted">Aucun paiement</li>'}
+                </ul>
+                ${state.isAdmin && c.valide && reste > 0
+                    ? `<div>${actionButton('contrat-pay', c.id, 'Ajouter un paiement', 'btn-primary')}</div>` : ''}
+            </div>
+        </article>`;
+    }).join('')}</div>`;
+};
+
+/* ---------- Espace client : louer une voiture ---------- */
+
+VIEWS.louer = async () => {
+    const vehicules = await api('GET', '/vehicules');
+    const catalogue = vehicules.filter((v) => v.statut !== 'MAINTENANCE');
+    state.data.catalogue = catalogue;
+
+    $('#content').innerHTML = `
+        <section class="card">
+            <div class="card-head">
+                <h2>Nos véhicules (${catalogue.length})</h2>
+                <div class="toolbar">
+                    ${searchInput('Rechercher (marque, modèle, ville…)')}
+                    ${filterSelect('categorie', 'Toutes les catégories', LABELS.categorie)}
+                </div>
+            </div>
+        </section>
+        <div id="table-zone"></div>`;
+
+    state.redraw = () => {
+        const f = filters();
+        const cars = catalogue
+            .filter((v) => !f.categorie || v.categorie === f.categorie)
+            .filter((v) => matches(v, f.q, ['marque', 'modele', 'agenceNom']));
+        $('#table-zone').innerHTML = cars.length ? `<div class="catalogue">${cars.map((v) => `
+            <article class="card car">
+                <div class="car-visual">${esc(LABELS.categorie[v.categorie] || v.categorie)}</div>
+                <div class="card-body">
+                    <div class="car-title">${esc(v.marque)} ${esc(v.modele)}</div>
+                    <div class="muted">${esc(v.immatriculation)}${v.agenceNom ? ' · ' + esc(v.agenceNom) : ''}</div>
+                    <div class="car-price">${money(v.tarifJournalier)} <small>/ jour</small></div>
+                    ${v.statut === 'LOUE'
+                        ? '<div><span class="badge b-blue">Loué en ce moment</span> <span class="muted">réservable à d\'autres dates</span></div>'
+                        : '<div><span class="badge b-green">Disponible</span></div>'}
+                </div>
+                <div class="car-foot">${actionButton('louer', v.id, 'Louer ce véhicule', 'btn-primary btn-block')}</div>
+            </article>`).join('')}</div>`
+            : '<div class="card empty">Aucun véhicule ne correspond à votre recherche.</div>';
+    };
+    state.redraw();
+};
+
+VIEWS['mes-reservations'] = async () => {
+    const reservations = await api('GET', '/me/reservations');
+    state.data.mesReservations = reservations;
+    state.redraw = null;
+
+    if (!reservations.length) {
+        $('#content').innerHTML = `<div class="card empty">Vous n'avez pas encore de réservation.
+            <div style="margin-top:12px"><a class="btn btn-primary" href="#louer">Louer une voiture</a></div></div>`;
+        return;
+    }
+    const rows = reservations.map((r) => `
+        <tr>
+            <td class="muted">n°${r.id}</td>
+            <td class="strong">${esc(r.vehiculeLibelle)}</td>
+            <td>${formatDate(r.dateDebut)} → ${formatDate(r.dateFin)}<div class="muted">${r.nombreJours} jour(s)</div></td>
+            <td class="num">${money(r.montantEstime)}</td>
+            <td>${badge(LABELS.statutReservation, r.statut)}</td>
+            <td><div class="actions">${r.statut === 'EN_ATTENTE'
+                ? actionButton('ma-reservation-cancel', r.id, 'Annuler ma demande', 'btn-danger') : ''}</div></td>
+        </tr>`);
+    $('#content').innerHTML = `
+        <section class="card">
+            <div class="card-head"><h2>Mes réservations (${reservations.length})</h2>
+                <a class="btn btn-primary" href="#louer">Nouvelle location</a></div>
+            ${table([
+                { label: 'N°' }, { label: 'Véhicule' }, { label: 'Période' },
+                { label: 'Montant', num: true }, { label: 'Statut' }, { label: '' },
+            ], rows, '')}
+        </section>
+        <p class="muted" style="margin:0">« En attente » : l'agence n'a pas encore validé votre demande. « Confirmée » : le véhicule vous est réservé.</p>`;
+};
+
+VIEWS.profil = async () => {
+    state.redraw = null;
+    const profil = await loadProfil();
+    state.data.profil = profil;
+    if (!profil) {
+        $('#content').innerHTML = `<div class="card empty">Votre profil n'est pas encore rempli. Il est nécessaire pour louer un véhicule.
+            <div style="margin-top:12px">${actionButton('profil-edit', '', 'Compléter mon profil', 'btn-primary')}</div></div>`;
+        return;
+    }
+    const line = (label, value) => `<div class="row"><span class="muted">${esc(label)}</span><span class="strong">${esc(value || '—')}</span></div>`;
+    $('#content').innerHTML = `
+        <section class="card profile-card">
+            <div class="card-head"><h2>${esc(profil.prenom)} ${esc(profil.nom)}</h2>
+                ${actionButton('profil-edit', '', 'Modifier', 'btn-ghost')}</div>
+            <div class="card-body" style="display:grid;gap:10px">
+                ${line('Email', profil.email)}
+                ${line('Téléphone', profil.telephone)}
+                ${line('N° de permis', profil.numPermis)}
+                ${line('Client depuis le', formatDate(profil.dateInscription))}
+            </div>
+        </section>`;
+};
+
+/** Returns the customer profile, or null if it has not been filled yet. */
+async function loadProfil() {
+    try {
+        return await api('GET', '/me/profil');
+    } catch (error) {
+        if (error.status === 404) return null;
+        throw error;
+    }
+}
+
+function openProfilForm(profil, after) {
+    openForm({
+        title: profil ? 'Modifier mon profil' : 'Compléter mon profil',
+        note: profil ? '' : 'Ces informations sont demandées une seule fois, avant votre première location.',
+        fields: CLIENT_FIELDS,
+        values: profil || {},
+        onSubmit: async (data) => { await api('PUT', '/me/profil', data); toast('Profil enregistré.', 'success'); },
+        after,
+    });
+}
+
+function openLocationForm(v) {
+    const today = todayIso();
+    const tarif = Number(v.tarifJournalier);
+    openForm({
+        title: `Louer ${v.marque} ${v.modele}`,
+        submitLabel: 'Envoyer ma demande',
+        values: { dateDebut: today, dateFin: today },
+        fields: [
+            { name: 'dateDebut', label: 'Du', type: 'date', required: true, min: today },
+            { name: 'dateFin', label: 'Au', type: 'date', required: true, min: today },
+        ],
+        onChange: (data) => {
+            if (!data.dateDebut || !data.dateFin) return '';
+            if (data.dateFin < data.dateDebut) return 'La date de fin doit être après la date de début.';
+            const jours = daysBetween(data.dateDebut, data.dateFin);
+            return `${jours} jour(s) × ${money(tarif)} = ${money(jours * tarif)}`;
+        },
+        onSubmit: async (data) => {
+            await api('POST', '/me/reservations', { vehiculeId: v.id, ...data });
+            toast("Demande envoyée. L'agence va la confirmer.", 'success');
+        },
+        after: () => { location.hash = '#mes-reservations'; },
+    });
+}
+
+/* =========================================================================
+ * Actions (buttons with data-action)
+ * ========================================================================= */
+
+const findIn = (key, id) => (state.data[key] || []).find((item) => String(item.id) === String(id));
+
+const ACTIONS = {
+    louer: async (id) => {
+        const v = findIn('catalogue', id);
+        try {
+            const profil = await loadProfil();
+            if (profil) openLocationForm(v);
+            else openProfilForm(null, () => openLocationForm(v));
+        } catch (error) {
+            toast(error.message, 'error');
+        }
+    },
+    'profil-edit': () => openProfilForm(state.data.profil),
+    'ma-reservation-cancel': (id) => confirmAction('Annuler ma demande', `Annuler la demande de réservation n°${id} ?`,
+        'Annuler la demande', async () => {
+            await api('POST', `/me/reservations/${id}/annulation`);
+            return 'Demande annulée.';
+        }),
+
+    'vehicule-new': () => openForm({
+        title: 'Ajouter un véhicule',
+        fields: vehiculeFields(),
+        values: { statut: 'DISPONIBLE', categorie: 'CITADINE' },
+        onSubmit: async (data) => { await api('POST', '/vehicules', data); toast('Véhicule ajouté.', 'success'); },
+    }),
+    'vehicule-edit': (id) => {
+        const v = findIn('vehicules', id);
+        openForm({
+            title: `Modifier ${v.immatriculation}`,
+            fields: vehiculeFields(),
+            values: v,
+            onSubmit: async (data) => { await api('PUT', `/vehicules/${id}`, data); toast('Véhicule modifié.', 'success'); },
+        });
+    },
+    'vehicule-delete': (id) => {
+        const v = findIn('vehicules', id);
+        confirmAction('Supprimer le véhicule', `Supprimer ${v.marque} ${v.modele} (${v.immatriculation}) ?`, 'Supprimer',
+            async () => { await api('DELETE', `/vehicules/${id}`); return 'Véhicule supprimé.'; });
+    },
+
+    'agence-new': () => openForm({
+        title: 'Ajouter une agence',
+        fields: AGENCE_FIELDS,
+        onSubmit: async (data) => { await api('POST', '/agences', data); toast('Agence ajoutée.', 'success'); },
+    }),
+    'agence-edit': (id) => openForm({
+        title: 'Modifier l\'agence',
+        fields: AGENCE_FIELDS,
+        values: findIn('agences', id),
+        onSubmit: async (data) => { await api('PUT', `/agences/${id}`, data); toast('Agence modifiée.', 'success'); },
+    }),
+    'agence-delete': (id) => {
+        const a = findIn('agences', id);
+        confirmAction('Supprimer l\'agence', `Supprimer l'agence ${a.nom} (${a.ville}) ?`, 'Supprimer',
+            async () => { await api('DELETE', `/agences/${id}`); return 'Agence supprimée.'; });
+    },
+
+    'client-new': () => openForm({
+        title: 'Ajouter un client',
+        fields: CLIENT_FIELDS,
+        onSubmit: async (data) => { await api('POST', '/clients', data); toast('Client ajouté.', 'success'); },
+    }),
+    'client-edit': (id) => openForm({
+        title: 'Modifier le client',
+        fields: CLIENT_FIELDS,
+        values: findIn('clients', id),
+        onSubmit: async (data) => { await api('PUT', `/clients/${id}`, data); toast('Client modifié.', 'success'); },
+    }),
+    'client-delete': (id) => {
+        const c = findIn('clients', id);
+        confirmAction('Supprimer le client', `Supprimer ${c.prenom} ${c.nom} ?`, 'Supprimer',
+            async () => { await api('DELETE', `/clients/${id}`); return 'Client supprimé.'; });
+    },
+
+    'reservation-new': () => openReservationForm().catch((error) => toast(error.message, 'error')),
+    'reservation-confirm': (id) => changeStatut(id, 'CONFIRMEE', 'Confirmer la réservation',
+        'Le véhicule passera au statut « Loué ».', 'Confirmer'),
+    'reservation-finish': (id) => changeStatut(id, 'TERMINEE', 'Terminer la location',
+        'Le véhicule redeviendra disponible.', 'Terminer'),
+    'reservation-cancel': (id) => changeStatut(id, 'ANNULEE', 'Annuler la réservation',
+        'Cette action est définitive.', 'Annuler la réservation'),
+    'reservation-contract': (id) => {
+        const r = findIn('reservations', id);
+        confirmAction('Créer le contrat',
+            `Créer le contrat de ${r.clientNom} pour ${r.nombreJours} jour(s), soit ${money(r.montantEstime)} ?`, 'Créer le contrat',
+            async () => { await api('POST', `/reservations/${id}/contrat`); return 'Contrat créé.'; });
+    },
+    'reservation-delete': (id) => confirmAction('Supprimer la réservation', `Supprimer la réservation n°${id} ?`, 'Supprimer',
+        async () => { await api('DELETE', `/reservations/${id}`); return 'Réservation supprimée.'; }),
+
+    'contrat-pay': (id) => {
+        const c = findIn('contrats', id);
+        openForm({
+            title: `Paiement · contrat n°${id}`,
+            submitLabel: 'Enregistrer le paiement',
+            note: `Reste à payer : ${money(c.resteAPayer)}`,
+            values: { montant: c.resteAPayer, modePaiement: 'CARTE' },
+            fields: [
+                { name: 'montant', label: 'Montant (€)', type: 'number', step: '0.01', min: '0.01', max: c.resteAPayer, required: true, parse: 'number' },
+                { name: 'modePaiement', label: 'Mode de paiement', type: 'select', required: true, options: options(LABELS.modePaiement) },
+            ],
+            onSubmit: async (data) => { await api('POST', `/contrats/${id}/paiements`, data); toast('Paiement enregistré.', 'success'); },
+        });
+    },
+};
+
+/* ---------- Start ---------- */
+
+(async function init() {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+        logout();
+        return;
+    }
+    try {
+        await startSession(saved);
+    } catch {
+        logout();
+    }
+})();
