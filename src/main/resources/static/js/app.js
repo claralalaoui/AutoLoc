@@ -30,13 +30,13 @@ const PAGES = {
     contrats: 'Contrats',
     louer: 'Louer une voiture',
     'mes-reservations': 'Mes réservations',
-    profil: 'Mon profil',
+    profils: 'Mes profils',
 };
 
 /** Pages shown in the menu for each kind of account (the first one is the home page). */
 const NAV = {
     admin: ['dashboard', 'vehicules', 'agences', 'clients', 'reservations', 'contrats'],
-    client: ['louer', 'mes-reservations', 'profil'],
+    client: ['louer', 'mes-reservations', 'profils'],
 };
 
 const STORAGE_KEY = 'autoloc.auth';
@@ -221,6 +221,14 @@ $('#login-form').addEventListener('submit', async (event) => {
 
 $('#logout').addEventListener('click', () => logout());
 
+const DEMO_ACCOUNTS = { student: 'student123', admin: 'admin123' };
+document.querySelectorAll('[data-demo]').forEach((button) => button.addEventListener('click', () => {
+    const form = $('#login-form');
+    form.username.value = button.dataset.demo;
+    form.password.value = DEMO_ACCOUNTS[button.dataset.demo];
+    form.querySelector('button[type=submit]').focus();
+}));
+
 /* ---------- Routing ---------- */
 
 window.addEventListener('hashchange', route);
@@ -336,27 +344,33 @@ document.addEventListener('keydown', (event) => {
 function fieldHtml(f, value) {
     const required = f.required ? 'required' : '';
     const cls = f.full ? 'field full' : 'field';
+    const error = `<small class="field-error" data-error-for="${f.name}" hidden></small>`;
     if (f.type === 'select') {
         const empty = f.emptyLabel !== undefined ? `<option value="">${esc(f.emptyLabel)}</option>` : '';
         const opts = f.options.map((o) => {
             const selected = String(o.value) === String(value ?? '') ? 'selected' : '';
             return `<option value="${esc(o.value)}" ${selected}>${esc(o.label)}</option>`;
         }).join('');
-        return `<label class="${cls}"><span>${esc(f.label)}</span><select name="${f.name}" ${required}>${empty}${opts}</select></label>`;
+        return `<label class="${cls}" data-field="${f.name}"><span>${esc(f.label)}</span><select name="${f.name}" ${required}>${empty}${opts}</select>${error}</label>`;
     }
     const extra = [
         f.step ? `step="${f.step}"` : '',
         f.min !== undefined ? `min="${f.min}"` : '',
         f.max !== undefined ? `max="${f.max}"` : '',
         f.maxlength ? `maxlength="${f.maxlength}"` : '',
+        f.placeholder ? `placeholder="${esc(f.placeholder)}"` : '',
+        f.autocomplete ? `autocomplete="${f.autocomplete}"` : '',
     ].join(' ');
-    return `<label class="${cls}"><span>${esc(f.label)}</span>
-        <input name="${f.name}" type="${f.type || 'text'}" value="${esc(value ?? '')}" ${required} ${extra}></label>`;
+    const heading = f.section ? `<h3 class="form-section full">${esc(f.section)}</h3>` : '';
+    return `${heading}<label class="${cls}" data-field="${f.name}"><span>${esc(f.label)}</span>
+        <input name="${f.name}" type="${f.type || 'text'}" value="${esc(value ?? '')}" ${required} ${extra}>${error}</label>`;
 }
 
 /**
  * Opens a form in the modal.
- * fields: [{ name, label, type, required, options, parse: 'number' | 'id', full, ... }]
+ * fields: [{ name, label, type, required, options, parse: 'number' | 'id', full,
+ *            validate(value, data) -> message, showIf(data) -> boolean, section }]
+ * Fields hidden by showIf are neither validated nor sent.
  */
 function openForm({ title, fields, values = {}, submitLabel = 'Enregistrer', onSubmit, onChange, note, after }) {
     const html = `
@@ -372,12 +386,16 @@ function openForm({ title, fields, values = {}, submitLabel = 'Enregistrer', onS
     openModal(title, html);
 
     const form = $('#entity-form');
+    const rawData = () => Object.fromEntries(fields.map((f) => [f.name, form.elements[f.name].value.trim()]));
+    const visible = (f, raw) => !f.showIf || f.showIf(raw);
+
     const read = () => {
+        const raw = rawData();
         const data = {};
-        fields.forEach((f) => {
-            const raw = form.elements[f.name].value.trim();
-            if (f.parse === 'number' || f.parse === 'id') data[f.name] = raw === '' ? null : Number(raw);
-            else data[f.name] = raw === '' ? null : raw;
+        fields.filter((f) => visible(f, raw)).forEach((f) => {
+            const value = raw[f.name];
+            if (f.parse === 'number' || f.parse === 'id') data[f.name] = value === '' ? null : Number(value);
+            else data[f.name] = value === '' ? null : value;
         });
         return data;
     };
@@ -386,21 +404,53 @@ function openForm({ title, fields, values = {}, submitLabel = 'Enregistrer', onS
         el.hidden = !text;
         el.textContent = text || '';
     };
+    const setError = (name, message) => {
+        const slot = form.querySelector(`[data-error-for="${name}"]`);
+        const label = form.querySelector(`[data-field="${name}"]`);
+        if (!slot || !label) return false;
+        slot.hidden = !message;
+        slot.textContent = message || '';
+        label.classList.toggle('invalid', Boolean(message));
+        return true;
+    };
+    const applyVisibility = () => {
+        const raw = rawData();
+        fields.forEach((f) => {
+            const label = form.querySelector(`[data-field="${f.name}"]`);
+            const show = visible(f, raw);
+            label.hidden = !show;
+            const heading = label.previousElementSibling;
+            if (heading && heading.classList.contains('form-section')) heading.hidden = !show;
+        });
+    };
+    const validate = () => {
+        const raw = rawData();
+        let first = null;
+        fields.filter((f) => visible(f, raw)).forEach((f) => {
+            const value = raw[f.name];
+            let message = '';
+            if (f.required && value === '') message = 'Ce champ est obligatoire.';
+            else if (value !== '' && f.validate) message = f.validate(value, raw) || '';
+            setError(f.name, message);
+            if (message && !first) first = form.elements[f.name];
+        });
+        if (first) first.focus();
+        return !first;
+    };
 
-    if (onChange) {
-        form.addEventListener('input', () => showNote(onChange(read())));
-        showNote(onChange(read()));
-    }
+    applyVisibility();
+    form.addEventListener('input', (event) => {
+        if (event.target.name) setError(event.target.name, '');
+        applyVisibility();
+        if (onChange) showNote(onChange(read()));
+    });
+    if (onChange) showNote(onChange(read()));
 
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const errorBox = $('#form-error');
-        if (!form.checkValidity()) {
-            errorBox.hidden = false;
-            errorBox.textContent = 'Remplissez correctement les champs obligatoires.';
-            form.reportValidity();
-            return;
-        }
+        errorBox.hidden = true;
+        if (!validate()) return;
         const button = form.querySelector('button[type=submit]');
         button.disabled = true;
         try {
@@ -409,9 +459,14 @@ function openForm({ title, fields, values = {}, submitLabel = 'Enregistrer', onS
             await refresh();
             if (after) after();
         } catch (error) {
-            errorBox.hidden = false;
-            errorBox.innerHTML = esc(error.message) + (error.details?.length
-                ? '<br>' + error.details.map(esc).join('<br>') : '');
+            // Field errors returned by the server ("nouveauClient.email : ...") go under their field.
+            const others = (error.details || []).filter((detail) => {
+                const [path, ...rest] = detail.split(' : ');
+                return !setError(path.split('.').pop(), rest.join(' : '));
+            });
+            const placedAll = error.details?.length && !others.length;
+            errorBox.hidden = placedAll;
+            errorBox.innerHTML = esc(placedAll ? '' : error.message) + (others.length ? '<br>' + others.map(esc).join('<br>') : '');
         } finally {
             button.disabled = false;
         }
@@ -647,12 +702,23 @@ VIEWS.clients = async () => {
     });
 };
 
+/* Same rules as the server (ClientDto): the server checks again, the browser only gives faster feedback. */
+const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const PERMIS_RE = /^[A-Za-z0-9]{8,15}$/;
+
 const CLIENT_FIELDS = [
-    { name: 'prenom', label: 'Prénom', required: true, maxlength: 50 },
-    { name: 'nom', label: 'Nom', required: true, maxlength: 50 },
-    { name: 'email', label: 'Email', type: 'email', required: true, full: true, maxlength: 100 },
-    { name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20 },
-    { name: 'numPermis', label: 'N° de permis', required: true, maxlength: 30 },
+    { name: 'prenom', label: 'Prénom', required: true, maxlength: 50, autocomplete: 'given-name' },
+    { name: 'nom', label: 'Nom', required: true, maxlength: 50, autocomplete: 'family-name' },
+    {
+        name: 'email', label: 'Email', type: 'email', required: true, full: true, maxlength: 100,
+        placeholder: 'nom@domaine.fr', autocomplete: 'email',
+        validate: (v) => (EMAIL_RE.test(v) ? '' : "Format d'email invalide."),
+    },
+    { name: 'telephone', label: 'Téléphone', type: 'tel', maxlength: 20, autocomplete: 'tel' },
+    {
+        name: 'numPermis', label: 'N° de permis', required: true, maxlength: 15, placeholder: '8 à 15 lettres ou chiffres',
+        validate: (v) => (PERMIS_RE.test(v) ? '' : 'Le numéro de permis doit contenir 8 à 15 lettres ou chiffres, sans caractère spécial.'),
+    },
 ];
 
 /* ---------- Réservations ---------- */
@@ -942,7 +1008,7 @@ VIEWS['mes-reservations'] = async () => {
     const rows = reservations.map((r) => `
         <tr>
             <td class="muted">n°${r.id}</td>
-            <td class="strong">${esc(r.vehiculeLibelle)}</td>
+            <td class="strong">${esc(r.vehiculeLibelle)}<div class="muted">pour ${esc(r.clientNom)}</div></td>
             <td><span class="mine-period">du ${formatDate(r.dateDebut)} au ${formatDate(r.dateFin)}</span><div class="muted">${r.nombreJours} jour(s)</div></td>
             <td class="num">${money(r.montantEstime)}</td>
             <td>${statusLight(r.statut)}</td>
@@ -961,69 +1027,75 @@ VIEWS['mes-reservations'] = async () => {
         <p class="muted" style="margin:0">Tant que le voyant clignote, l'agence n'a pas encore validé votre demande. Une fois confirmée, le véhicule vous est réservé.</p>`;
 };
 
-VIEWS.profil = async () => {
+VIEWS.profils = async () => {
+    const profils = await api('GET', '/me/profils');
+    state.data.profils = profils;
     state.redraw = null;
-    const profil = await loadProfil();
-    state.data.profil = profil;
-    if (!profil) {
-        $('#content').innerHTML = `<div class="card empty">Votre profil n'est pas encore rempli. Il est nécessaire pour louer un véhicule.
-            <div style="margin-top:12px">${actionButton('profil-edit', '', 'Compléter mon profil', 'btn-primary')}</div></div>`;
+    const head = `<div class="catalogue-bar"><p class="muted" style="margin:0">Un profil par conducteur. Vous le choisissez au moment de louer.</p>
+        ${actionButton('profil-new', '', 'Ajouter un profil', 'btn-primary')}</div>`;
+    if (!profils.length) {
+        $('#content').innerHTML = `${head}<div class="card empty">Aucun profil pour le moment. Vous pouvez aussi en créer un directement en louant une voiture.</div>`;
         return;
     }
     const line = (label, value) => `<div class="row"><span class="muted">${esc(label)}</span><span class="strong">${esc(value || '—')}</span></div>`;
-    $('#content').innerHTML = `
+    $('#content').innerHTML = `${head}<div class="profiles">${profils.map((p) => `
         <section class="card profile-card">
-            <div class="card-head"><h2>${esc(profil.prenom)} ${esc(profil.nom)}</h2>
-                ${actionButton('profil-edit', '', 'Modifier', 'btn-ghost')}</div>
+            <div class="card-head"><h2>${esc(p.prenom)} ${esc(p.nom)}</h2>
+                <div class="actions">${actionButton('profil-edit', p.id, 'Modifier')}${actionButton('profil-delete', p.id, 'Supprimer', 'btn-danger')}</div></div>
             <div class="card-body" style="display:grid;gap:10px">
-                ${line('Email', profil.email)}
-                ${line('Téléphone', profil.telephone)}
-                ${line('N° de permis', profil.numPermis)}
-                ${line('Client depuis le', formatDate(profil.dateInscription))}
+                ${line('Email', p.email)}
+                ${line('Téléphone', p.telephone)}
+                ${line('N° de permis', p.numPermis)}
+                ${line('Créé le', formatDate(p.dateInscription))}
             </div>
-        </section>`;
+        </section>`).join('')}</div>`;
 };
 
-/** Returns the customer profile, or null if it has not been filled yet. */
-async function loadProfil() {
-    try {
-        return await api('GET', '/me/profil');
-    } catch (error) {
-        if (error.status === 404) return null;
-        throw error;
-    }
-}
+const NEW_PROFILE = 'nouveau';
 
-function openProfilForm(profil, after) {
-    openForm({
-        title: profil ? 'Modifier mon profil' : 'Compléter mon profil',
-        note: profil ? '' : 'Ces informations sont demandées une seule fois, avant votre première location.',
-        fields: CLIENT_FIELDS,
-        values: profil || {},
-        onSubmit: async (data) => { await api('PUT', '/me/profil', data); toast('Profil enregistré.', 'success'); },
-        after,
-    });
-}
-
-function openLocationForm(v) {
+function openLocationForm(v, profils) {
     const today = todayIso();
     const tarif = Number(v.tarifJournalier);
+    const isNew = (raw) => raw.clientId === NEW_PROFILE;
+    const profileFields = CLIENT_FIELDS.map((f, i) => ({
+        ...f,
+        showIf: isNew,
+        section: i === 0 ? 'Nouveau profil' : undefined,
+    }));
+
     openForm({
         title: `Louer ${v.marque} ${v.modele}`,
         submitLabel: 'Envoyer ma demande',
-        values: { dateDebut: today, dateFin: today },
+        values: { dateDebut: today, dateFin: today, clientId: profils.length ? profils[0].id : NEW_PROFILE },
         fields: [
-            { name: 'dateDebut', label: 'Du', type: 'date', required: true, min: today },
-            { name: 'dateFin', label: 'Au', type: 'date', required: true, min: today },
+            {
+                name: 'clientId', label: 'Conducteur', type: 'select', required: true, full: true,
+                options: [
+                    ...profils.map((p) => ({ value: p.id, label: `${p.prenom} ${p.nom} (${p.email})` })),
+                    { value: NEW_PROFILE, label: 'Saisir un nouveau profil' },
+                ],
+            },
+            ...profileFields,
+            {
+                name: 'dateDebut', label: 'Du', type: 'date', required: true, min: today, section: 'Dates',
+                validate: (value) => (value < today ? 'La date de début ne peut pas être dans le passé.' : ''),
+            },
+            {
+                name: 'dateFin', label: 'Au', type: 'date', required: true, min: today,
+                validate: (value, raw) => (value < raw.dateDebut ? 'La date de fin doit être après la date de début.' : ''),
+            },
         ],
         onChange: (data) => {
-            if (!data.dateDebut || !data.dateFin) return '';
-            if (data.dateFin < data.dateDebut) return 'La date de fin doit être après la date de début.';
+            if (!data.dateDebut || !data.dateFin || data.dateFin < data.dateDebut) return '';
             const jours = daysBetween(data.dateDebut, data.dateFin);
             return `${jours} jour(s) × ${money(tarif)} = ${money(jours * tarif)}`;
         },
         onSubmit: async (data) => {
-            await api('POST', '/me/reservations', { vehiculeId: v.id, ...data });
+            const { clientId, dateDebut, dateFin, ...profil } = data;
+            const body = clientId === NEW_PROFILE
+                ? { nouveauClient: profil, vehiculeId: v.id, dateDebut, dateFin }
+                : { clientId: Number(clientId), vehiculeId: v.id, dateDebut, dateFin };
+            await api('POST', '/me/reservations', body);
             toast("Demande envoyée. L'agence va la confirmer.", 'success');
         },
         after: () => { location.hash = '#mes-reservations'; },
@@ -1040,14 +1112,27 @@ const ACTIONS = {
     louer: async (id) => {
         const v = findIn('catalogue', id);
         try {
-            const profil = await loadProfil();
-            if (profil) openLocationForm(v);
-            else openProfilForm(null, () => openLocationForm(v));
+            openLocationForm(v, await api('GET', '/me/profils'));
         } catch (error) {
             toast(error.message, 'error');
         }
     },
-    'profil-edit': () => openProfilForm(state.data.profil),
+    'profil-new': () => openForm({
+        title: 'Ajouter un profil',
+        fields: CLIENT_FIELDS,
+        onSubmit: async (data) => { await api('POST', '/me/profils', data); toast('Profil ajouté.', 'success'); },
+    }),
+    'profil-edit': (id) => openForm({
+        title: 'Modifier le profil',
+        fields: CLIENT_FIELDS,
+        values: findIn('profils', id),
+        onSubmit: async (data) => { await api('PUT', `/me/profils/${id}`, data); toast('Profil modifié.', 'success'); },
+    }),
+    'profil-delete': (id) => {
+        const p = findIn('profils', id);
+        confirmAction('Supprimer le profil', `Supprimer le profil de ${p.prenom} ${p.nom} ?`, 'Supprimer',
+            async () => { await api('DELETE', `/me/profils/${id}`); return 'Profil supprimé.'; });
+    },
     'filtre-categorie': (value) => {
         state.filters[state.page] = { ...filters(), categorie: value };
         document.querySelectorAll('.switch').forEach((b) => b.classList.toggle('on', b.dataset.id === value));
@@ -1149,6 +1234,7 @@ const ACTIONS = {
 /* ---------- Start ---------- */
 
 (async function init() {
+    $('#login-car').innerHTML = carSvg('SUV', { beamLength: 230, viewBox: '0 0 490 100' });
     const saved = sessionStorage.getItem(STORAGE_KEY);
     if (!saved) {
         logout();

@@ -14,30 +14,45 @@
 
 <!-- Login -->
 <section id="login-view" class="login" hidden>
-    <form id="login-form" class="login-card" autocomplete="on">
-        <div class="brand brand-lg">
-            <span class="brand-mark">A</span>
-            <span>AutoLoc</span>
+    <div class="login-scene">
+        <div class="brand login-brand"><span class="brand-mark">A</span><span>AutoLoc</span></div>
+        <div class="login-tagline">
+            <h1>La voiture est prête.<br>Et vous ?</h1>
+            <p>Clients : choisissez un véhicule et vos dates en quelques clics. Agence : gérez la flotte, les réservations et les contrats.</p>
         </div>
-        <p class="login-sub">Gestion des agences, véhicules et locations</p>
-
-        <label class="field">
-            <span>Identifiant</span>
-            <input name="username" autocomplete="username" required>
-        </label>
-        <label class="field">
-            <span>Mot de passe</span>
-            <input name="password" type="password" autocomplete="current-password" required>
-        </label>
-        <p id="login-error" class="form-error" hidden></p>
-        <button class="btn btn-primary btn-block" type="submit">Se connecter</button>
-
-        <div class="login-hint">
-            <strong>Comptes de démonstration</strong>
-            <span><code>student</code> / <code>student123</code> : espace client (louer une voiture)</span>
-            <span><code>admin</code> / <code>admin123</code> : agence (véhicules, réservations, contrats)</span>
+        <div class="login-road" aria-hidden="true">
+            <div id="login-car" class="hero-car login-car"></div>
+            <div class="road"></div>
         </div>
-    </form>
+    </div>
+
+    <div class="login-side">
+        <form id="login-form" class="login-card" autocomplete="on">
+            <h2>Connexion</h2>
+            <label class="field">
+                <span>Identifiant</span>
+                <input name="username" autocomplete="username" required>
+            </label>
+            <label class="field">
+                <span>Mot de passe</span>
+                <input name="password" type="password" autocomplete="current-password" required>
+            </label>
+            <p id="login-error" class="form-error" hidden></p>
+            <button class="btn btn-primary btn-block" type="submit">Se connecter</button>
+
+            <div class="login-demo">
+                <span>Comptes de démonstration</span>
+                <div class="login-demo-buttons">
+                    <button class="demo-btn" type="button" data-demo="student">
+                        <strong>Essayer en client</strong><small>student / student123</small>
+                    </button>
+                    <button class="demo-btn" type="button" data-demo="admin">
+                        <strong>Essayer en agence</strong><small>admin / admin123</small>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
 </section>
 
 <!-- Application -->

@@ -39,6 +39,7 @@ public class ReservationService {
     private final ClientRepository clientRepository;
     private final VehiculeRepository vehiculeRepository;
     private final ContratRepository contratRepository;
+    private final ClientService clientService;
 
     public List<ReservationDto.Response> findAll() {
         return reservationRepository.findAllByOrderByDateDebutDesc().stream()
@@ -65,14 +66,23 @@ public class ReservationService {
         return creer(client, request.vehiculeId(), request.dateDebut(), request.dateFin());
     }
 
-    /** Reservation request made by a customer from his own space. */
+    /**
+     * Reservation request made by a customer from his own space, for one of his profiles
+     * or for a new profile entered in the same form (both are saved in one transaction).
+     */
     @Transactional
     public ReservationDto.Response createForClient(String username, ReservationDto.ClientRequest request) {
-        Client client = clientRepository.findByUsername(username)
-                .orElseThrow(() -> new BusinessRuleException("Complétez votre profil client avant de réserver."));
         if (request.dateDebut().isBefore(LocalDate.now())) {
             throw new BusinessRuleException("La date de début ne peut pas être dans le passé.");
         }
+        boolean profilExistant = request.clientId() != null;
+        boolean nouveauProfil = request.nouveauClient() != null;
+        if (profilExistant == nouveauProfil) {
+            throw new BusinessRuleException("Choisissez un de vos profils ou saisissez un nouveau profil.");
+        }
+        Client client = profilExistant
+                ? clientService.getProfil(username, request.clientId())
+                : clientService.creerPourCompte(username, request.nouveauClient());
         return creer(client, request.vehiculeId(), request.dateDebut(), request.dateFin());
     }
 

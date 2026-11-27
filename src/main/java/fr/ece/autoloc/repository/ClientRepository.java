@@ -10,7 +10,9 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     List<Client> findAllByOrderByNomAscPrenomAsc();
 
-    Optional<Client> findByUsername(String username);
+    List<Client> findByUsernameOrderByNomAscPrenomAsc(String username);
+
+    Optional<Client> findByIdClientAndUsername(Long idClient, String username);
 
     boolean existsByEmail(String email);
 

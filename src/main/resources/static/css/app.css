@@ -45,15 +45,72 @@ code { background: var(--grey-soft); padding: 1px 5px; border-radius: 4px; font-
 .brand-lg { font-size: 24px; color: var(--text); justify-content: center; }
 .brand-lg .brand-mark { width: 40px; height: 40px; font-size: 20px; }
 
-/* ---------- Login ---------- */
-.login { min-height: 100vh; display: grid; place-items: center; padding: 24px;
-    background: radial-gradient(circle at 20% 10%, #dfe7ff 0, transparent 45%), var(--bg); }
-.login-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 14px; padding: 32px; box-shadow: 0 12px 32px rgba(16, 24, 40, .08); display: grid; gap: 16px; }
-.login-sub { margin: -8px 0 4px; text-align: center; color: var(--text-muted); }
-.login-hint { display: grid; gap: 4px; padding: 12px; border-radius: 8px; background: var(--surface-2);
-    border: 1px dashed var(--border); font-size: 12.5px; color: var(--text-muted); }
-.login-hint strong { color: var(--text); }
+/* ---------- Login: night road ---------- */
+.login {
+    --night: #0c1119; --graphite: #151c28; --line: #263142; --light: #e7ecf4; --steel: #8a97ad;
+    --xenon: #3fd4ff; --brake: #ff4060;
+    --glow: 0 0 6px rgba(63, 212, 255, .9), 0 0 18px rgba(63, 212, 255, .45);
+    min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(360px, 1fr);
+    background:
+        radial-gradient(ellipse 50% 45% at 30% 100%, rgba(63, 212, 255, .14), transparent 70%),
+        radial-gradient(ellipse 40% 30% at 92% 10%, rgba(255, 64, 96, .10), transparent 70%),
+        linear-gradient(180deg, #070b14 0%, #0c1322 60%, #0e1726 100%);
+    color: var(--light); color-scheme: dark;
+    font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+}
+.login-scene { position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 40px 48px 0; min-height: 100vh; }
+.login-brand { font-family: "Chakra Petch", sans-serif; font-size: 22px; }
+.login .brand-mark { background: transparent; border: 1px solid var(--xenon); color: var(--xenon); box-shadow: var(--glow); }
+.login-tagline { margin-top: 12vh; max-width: 680px; position: relative; z-index: 2; }
+.login-tagline h1 { font-family: "Chakra Petch", sans-serif; font-size: clamp(38px, 4.6vw, 64px); line-height: 1.02; font-weight: 700; }
+.login-tagline p { color: var(--steel); font-size: 16px; line-height: 1.55; margin: 18px 0 0; max-width: 44ch; }
+.login-road { position: relative; margin-top: auto; height: 240px; margin-left: -48px; margin-right: -48px; }
+.login-road::before { /* city lights on the horizon */
+    content: ""; position: absolute; left: 0; right: 0; bottom: 88px; height: 2px; opacity: .45;
+    background-image: radial-gradient(circle, rgba(255, 196, 120, .9) 0 1px, transparent 1.6px); background-size: 23px 2px;
+}
+.login-road .road { height: 70px; }
+.login-car.hero-car { left: 6%; bottom: 44px; width: 78%; max-width: 760px; z-index: 1; }
+
+.login-side { display: grid; place-items: center; padding: 32px; border-left: 1px solid var(--line);
+    background: rgba(8, 12, 19, .55); backdrop-filter: blur(6px); }
+.login-card { position: relative; width: 100%; max-width: 380px; display: grid; gap: 16px; padding: 30px;
+    background: var(--graphite); border: 1px solid var(--line); border-radius: 18px; }
+.login-card::before { /* LED strip on top of the card */
+    content: ""; position: absolute; left: 24px; right: 24px; top: -1px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--xenon), transparent); box-shadow: var(--glow);
+    animation: led-sweep 3.2s ease-in-out infinite;
+}
+@keyframes led-sweep { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+.login-card h2 { font-family: "Chakra Petch", sans-serif; font-size: 24px; }
+.login .field > span { color: var(--steel); }
+.login .field input { background: #0f1520; color: var(--light); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
+.login .field input:focus { outline: none; border-color: var(--xenon); box-shadow: 0 0 0 3px rgba(63, 212, 255, .15); }
+.login .field input:-webkit-autofill, .login .field input:autofill {
+    box-shadow: 0 0 0 40px #0f1520 inset; -webkit-text-fill-color: var(--light); caret-color: var(--light);
+}
+.login .btn-primary { background: var(--xenon); color: #04121b; border-radius: 999px; padding: 12px; font-size: 15px;
+    transition: box-shadow .2s, transform .2s; }
+.login .btn-primary:hover:not(:disabled) { background: var(--xenon); box-shadow: var(--glow); transform: translateY(-1px); }
+.login .form-error { background: rgba(255, 64, 96, .1); color: #ff8da0; }
+.login-demo { display: grid; gap: 10px; padding-top: 6px; border-top: 1px solid var(--line); }
+.login-demo > span { color: var(--steel); font-size: 12.5px; padding-top: 10px; }
+.login-demo-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.demo-btn { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+    background: #0f1520; border: 1px solid var(--line); color: var(--light); font: inherit; transition: border-color .2s; }
+.demo-btn strong { font-size: 13px; }
+.demo-btn small { color: var(--steel); font-size: 11.5px; }
+.demo-btn:hover, .demo-btn:focus-visible { border-color: rgba(63, 212, 255, .55); outline: none; }
+.demo-btn[data-demo="admin"]:hover, .demo-btn[data-demo="admin"]:focus-visible { border-color: rgba(255, 64, 96, .55); }
+
+@media (max-width: 900px) {
+    .login { grid-template-columns: 1fr; }
+    .login-scene { min-height: auto; padding: 28px 22px 0; }
+    .login-tagline { margin-top: 28px; }
+    .login-road { height: 170px; margin-left: -22px; margin-right: -22px; }
+    .login-side { border-left: 0; border-top: 1px solid var(--line); padding: 24px 16px 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .login-card::before { animation: none; } }
 
 /* ---------- Layout ---------- */
 .layout { display: grid; grid-template-columns: 230px 1fr; min-height: 100vh; }
@@ -161,10 +218,14 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* ---------- Forms / modal ---------- */
 .field { display: grid; gap: 6px; }
 .field > span { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
 .form-grid .full { grid-column: 1 / -1; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .form-error { margin: 0; padding: 9px 12px; border-radius: 8px; background: var(--red-soft); color: var(--red); font-size: 13px; }
+.field-error { color: var(--red); font-size: 12.5px; }
+.field.invalid input, .field.invalid select { border-color: var(--red); }
+.form-section { margin: 6px 0 -4px; font-size: 13px; font-weight: 700; color: var(--text-muted); }
+.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
 .form-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--primary-soft); color: var(--primary-dark); }
 
 .modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; }
@@ -280,6 +341,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .theme-client .field > span { color: var(--steel); }
 .theme-client .form-note { background: rgba(63, 212, 255, .08); color: var(--xenon); border: 1px solid rgba(63, 212, 255, .25);
     font-family: "Chakra Petch", sans-serif; font-size: 15px; }
+.theme-client .field-error { color: #ff8da0; }
+.theme-client .field.invalid input, .theme-client .field.invalid select { border-color: var(--brake); box-shadow: 0 0 0 3px rgba(255, 64, 96, .12); }
+.theme-client .form-section { color: var(--xenon); font-family: "Chakra Petch", sans-serif; font-size: 14px; font-weight: 600; }
 .theme-client .form-error { background: rgba(255, 64, 96, .1); color: #ff8da0; }
 .theme-client .toast { background: var(--graphite-2); border: 1px solid var(--line); }
 .theme-client .toast.success { background: #0e2a22; border-color: rgba(62, 229, 154, .45); color: var(--green-led); }

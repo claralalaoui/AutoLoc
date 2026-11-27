@@ -40,8 +40,8 @@ public class Client {
     @Column(nullable = false)
     private LocalDate dateInscription;
 
-    /** Login of the customer account linked to this client (null for clients created by the agency). */
-    @Column(unique = true, length = 50)
+    /** Login of the customer account that owns this profile (an account can own several profiles; null for clients created by the agency). */
+    @Column(length = 50)
     private String username;
 
     @OneToMany(mappedBy = "client", cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)

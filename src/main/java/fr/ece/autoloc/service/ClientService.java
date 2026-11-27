@@ -28,33 +28,63 @@ public class ClientService {
         return ClientDto.Response.from(getClient(id));
     }
 
-    /** Profile of the customer linked to a login (customer space). */
-    public ClientDto.Response findProfil(String username) {
-        return clientRepository.findByUsername(username)
+    /* ---------- Customer space: an account can hold several profiles ---------- */
+
+    public List<ClientDto.Response> findProfils(String username) {
+        return clientRepository.findByUsernameOrderByNomAscPrenomAsc(username).stream()
                 .map(ClientDto.Response::from)
-                .orElseThrow(() -> new ResourceNotFoundException("Profil client non renseigné."));
+                .toList();
     }
 
-    /** Creates the customer profile at the first call, updates it afterwards. */
     @Transactional
-    public ClientDto.Response enregistrerProfil(String username, ClientDto.Request request) {
-        Client client = clientRepository.findByUsername(username).orElseGet(() -> {
-            Client nouveau = new Client();
-            nouveau.setUsername(username);
-            nouveau.setDateInscription(LocalDate.now());
-            return nouveau;
-        });
-        String email = normaliserEmail(request.email());
-        String permis = request.numPermis().trim();
-        verifierUnicite(email, permis, client.getIdClient());
-        appliquer(client, request, email, permis);
-        return ClientDto.Response.from(clientRepository.save(client));
+    public ClientDto.Response creerProfil(String username, ClientDto.Request request) {
+        return ClientDto.Response.from(creerPourCompte(username, request));
     }
+
+    /** Also used by ReservationService when a profile is entered in the rental form. */
+    @Transactional
+    public Client creerPourCompte(String username, ClientDto.Request request) {
+        String email = normaliserEmail(request.email());
+        String permis = normaliserPermis(request.numPermis());
+        verifierUnicite(email, permis, null);
+        Client client = new Client();
+        appliquer(client, request, email, permis);
+        client.setUsername(username);
+        client.setDateInscription(LocalDate.now());
+        return clientRepository.save(client);
+    }
+
+    @Transactional
+    public ClientDto.Response modifierProfil(String username, Long id, ClientDto.Request request) {
+        Client client = getProfil(username, id);
+        String email = normaliserEmail(request.email());
+        String permis = normaliserPermis(request.numPermis());
+        verifierUnicite(email, permis, id);
+        appliquer(client, request, email, permis);
+        return ClientDto.Response.from(client);
+    }
+
+    @Transactional
+    public void supprimerProfil(String username, Long id) {
+        Client client = getProfil(username, id);
+        if (!client.getReservations().isEmpty()) {
+            throw new BusinessRuleException("Ce profil a des réservations : il ne peut pas être supprimé.");
+        }
+        clientRepository.delete(client);
+    }
+
+    /** A profile of another account answers 404, as if it did not exist. */
+    public Client getProfil(String username, Long id) {
+        return clientRepository.findByIdClientAndUsername(id, username)
+                .orElseThrow(() -> new ResourceNotFoundException("Profil", id));
+    }
+
+    /* ---------- Agency side ---------- */
 
     @Transactional
     public ClientDto.Response create(ClientDto.Request request) {
         String email = normaliserEmail(request.email());
-        String permis = request.numPermis().trim();
+        String permis = normaliserPermis(request.numPermis());
         verifierUnicite(email, permis, null);
         Client client = new Client();
         appliquer(client, request, email, permis);
@@ -66,7 +96,7 @@ public class ClientService {
     public ClientDto.Response update(Long id, ClientDto.Request request) {
         Client client = getClient(id);
         String email = normaliserEmail(request.email());
-        String permis = request.numPermis().trim();
+        String permis = normaliserPermis(request.numPermis());
         verifierUnicite(email, permis, id);
         appliquer(client, request, email, permis);
         return ClientDto.Response.from(client);
@@ -112,5 +142,9 @@ public class ClientService {
 
     private static String normaliserEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normaliserPermis(String permis) {
+        return permis.trim().toUpperCase(Locale.ROOT);
     }
 }

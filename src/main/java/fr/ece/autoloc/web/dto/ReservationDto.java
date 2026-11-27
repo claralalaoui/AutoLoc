@@ -4,6 +4,7 @@ import fr.ece.autoloc.domain.Client;
 import fr.ece.autoloc.domain.Reservation;
 import fr.ece.autoloc.domain.StatutReservation;
 import fr.ece.autoloc.domain.Vehicule;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
@@ -22,8 +23,13 @@ public final class ReservationDto {
             @NotNull LocalDate dateFin) {
     }
 
-    /** Reservation made by a customer from his own space: the client is the logged-in user. */
+    /**
+     * Reservation made by a customer from his own space.
+     * Either clientId (one of the account's profiles) or nouveauClient (a profile created on the fly) is given.
+     */
     public record ClientRequest(
+            Long clientId,
+            @Valid ClientDto.Request nouveauClient,
             @NotNull Long vehiculeId,
             @NotNull LocalDate dateDebut,
             @NotNull LocalDate dateFin) {

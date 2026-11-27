@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,15 +42,27 @@ public class MonCompteController {
         return new CurrentUser(authentication.getName(), roles);
     }
 
-    @GetMapping("/profil")
-    public ClientDto.Response profil(Authentication authentication) {
-        return clientService.findProfil(authentication.getName());
+    @GetMapping("/profils")
+    public List<ClientDto.Response> mesProfils(Authentication authentication) {
+        return clientService.findProfils(authentication.getName());
     }
 
-    @PutMapping("/profil")
-    public ClientDto.Response enregistrerProfil(Authentication authentication,
-                                                @Valid @RequestBody ClientDto.Request request) {
-        return clientService.enregistrerProfil(authentication.getName(), request);
+    @PostMapping("/profils")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ClientDto.Response creerProfil(Authentication authentication, @Valid @RequestBody ClientDto.Request request) {
+        return clientService.creerProfil(authentication.getName(), request);
+    }
+
+    @PutMapping("/profils/{id}")
+    public ClientDto.Response modifierProfil(Authentication authentication, @PathVariable("id") Long id,
+                                             @Valid @RequestBody ClientDto.Request request) {
+        return clientService.modifierProfil(authentication.getName(), id, request);
+    }
+
+    @DeleteMapping("/profils/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void supprimerProfil(Authentication authentication, @PathVariable("id") Long id) {
+        clientService.supprimerProfil(authentication.getName(), id);
     }
 
     @GetMapping("/reservations")
